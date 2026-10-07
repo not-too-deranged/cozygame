@@ -1,0 +1,163 @@
+{
+  "theme": "Cozy Pastel Animal Crossing Aesthetics (Light Mode Primary)",
+  "archetype": "ARCHETYPE 3: PASTEL & SOFT with Tactile Toy/Wood Accents",
+  "typography": {
+    "font_family_headers": "'Fredoka', 'Baloo 2', 'Nunito', sans-serif",
+    "font_family_body": "'Nunito', 'Quicksand', -apple-system, sans-serif",
+    "font_family_mono": "'Fredoka', monospace",
+    "google_fonts_import": "@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@400;600;700;800;900&family=Quicksand:wght@500;600;700&display=swap');",
+    "hierarchy": {
+      "hero_title": "text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-[#4A3525] font-['Fredoka']",
+      "section_header": "text-2xl sm:text-3xl font-bold text-[#4A3525] font-['Fredoka']",
+      "card_title": "text-xl font-bold text-[#5C4033] font-['Fredoka']",
+      "hud_label": "text-xs font-bold uppercase tracking-wider text-[#7C5A3E]",
+      "body_text": "text-base font-semibold text-[#5C4033] font-['Nunito']",
+      "chat_text": "text-sm font-semibold text-[#3D271D] font-['Nunito']"
+    }
+  },
+  "colors": {
+    "background_canvas_fallback": "#7BC676",
+    "background_page": "#FFF8EE",
+    "surface_card": "#FFFBF4",
+    "surface_card_secondary": "#FAF0E4",
+    "surface_hud_tray": "rgba(255, 251, 244, 0.95)",
+    "border_chocolate": "#5C4033",
+    "border_soft_brown": "rgba(92, 64, 51, 0.25)",
+    "text_primary": "#3D271D",
+    "text_secondary": "#7C5A3E",
+    "text_muted": "#A0836C",
+    "accent_mint_green": "#9ED89D",
+    "accent_mint_dark": "#4CAF50",
+    "accent_butter_yellow": "#FFE67D",
+    "accent_pastel_peach": "#FFB899",
+    "accent_sky_blue": "#8ECEF1",
+    "accent_lavender": "#D3B6ED",
+    "accent_terracotta": "#E07A5F",
+    "status_online": "#52C41A",
+    "shadow_color": "#4A3525",
+    "avatar_colors": [
+      {"name": "Peach Sunset", "hex": "#FF9AA2", "border": "#E06873"},
+      {"name": "Butter Yellow", "hex": "#FFDAC1", "border": "#E5AF8C"},
+      {"name": "Mint Meadow", "hex": "#B5EAD7", "border": "#7CC9B0"},
+      {"name": "Sky Breeze", "hex": "#C7CEEA", "border": "#8F9BC7"},
+      {"name": "Lavender Dream", "hex": "#E2F0CB", "border": "#ADC887"},
+      {"name": "Coral Blossom", "hex": "#FFB7B2", "border": "#D87F79"}
+    ]
+  },
+  "visual_enhancers": {
+    "tactile_shadows": {
+      "button": "shadow-[0_4px_0_#5C4033] hover:shadow-[0_6px_0_#5C4033] active:shadow-[0_1px_0_#5C4033] active:translate-y-1 transition-all duration-150",
+      "card": "shadow-[0_8px_0_rgba(92,64,51,0.15)] rounded-3xl border-4 border-[#5C4033]",
+      "hud_tray": "shadow-[0_10px_25px_rgba(74,53,37,0.2),0_4px_0_#7C5A3E] rounded-3xl border-4 border-[#7C5A3E]"
+    },
+    "glassmorphism": "backdrop-blur-md bg-[#FFFBF4]/90 border-4 border-[#5C4033]/30 shadow-xl",
+    "borders": {
+      "heavy_rounded": "rounded-3xl",
+      "pill_rounded": "rounded-full",
+      "stroke_wood": "border-3 border-[#5C4033]"
+    },
+    "patterns": "Soft diagonal subtle stripe or wooden grain background overlays for modals"
+  },
+  "components": {
+    "landing_lobby": {
+      "container": "Max-w-md w-full p-8 bg-[#FFFBF4] border-4 border-[#5C4033] rounded-[32px] shadow-[0_12px_0_rgba(92,64,51,0.2)] text-center font-['Nunito'] relative z-10",
+      "logo": "Cozy Island Title with warm brown outline & pastel leaf badge",
+      "tabs": "Create Room / Join Room pill tabs with tactile spring animation",
+      "inputs": {
+        "player_name": "bg-[#FAF0E4] border-3 border-[#5C4033] text-[#3D271D] rounded-2xl p-4 text-center font-bold font-['Fredoka'] placeholder-[#A0836C] focus:ring-4 focus:ring-[#9ED89D] outline-none",
+        "room_code": "uppercase tracking-widest bg-[#FAF0E4] border-3 border-[#5C4033] text-[#3D271D] rounded-2xl p-4 text-center font-extrabold text-xl font-['Fredoka'] focus:ring-4 focus:ring-[#8ECEF1]"
+      },
+      "avatar_selector": "Grid of rounded color tokens with cute character preview avatar icon & selected ring indicator",
+      "cta_button": "w-full py-4 bg-[#9ED89D] text-[#2D5A27] font-extrabold text-xl font-['Fredoka'] rounded-2xl border-3 border-[#3A8037] shadow-[0_6px_0_#3A8037] hover:bg-[#B0E8AF] hover:-translate-y-0.5 active:translate-y-1 active:shadow-[0_1px_0_#3A8037] transition-all"
+    },
+    "hud_overlays": {
+      "top_bar": {
+        "position": "absolute top-4 left-4 right-4 flex justify-between items-center z-40 pointer-events-none",
+        "room_code_badge": "pointer-events-auto bg-[#FFFBF4] border-3 border-[#5C4033] px-4 py-2 rounded-full font-['Fredoka'] font-bold text-[#5C4033] shadow-[0_4px_0_#5C4033] flex items-center gap-2 hover:scale-105 transition-transform cursor-pointer",
+        "online_players_badge": "pointer-events-auto bg-[#FFFBF4] border-3 border-[#5C4033] px-4 py-2 rounded-full font-['Fredoka'] font-bold text-[#5C4033] shadow-[0_4px_0_#5C4033] flex items-center gap-2 cursor-pointer",
+        "action_buttons": "pointer-events-auto flex items-center gap-2"
+      },
+      "chat_panel": {
+        "position": "absolute bottom-24 left-4 w-80 max-h-72 z-40 pointer-events-auto",
+        "container": "bg-[#FFFBF4]/95 backdrop-blur-md border-3 border-[#5C4033] rounded-3xl p-4 shadow-[0_6px_0_rgba(92,64,51,0.2)] flex flex-col gap-2",
+        "messages_box": "h-40 overflow-y-auto space-y-2 pr-1 custom-scrollbar",
+        "message_bubble": "p-2 px-3 rounded-2xl bg-[#FAF0E4] border border-[#5C4033]/20 text-xs font-semibold text-[#3D271D] leading-snug",
+        "input_box": "flex items-center gap-2 bg-[#FAF0E4] border-2 border-[#5C4033] rounded-full px-3 py-1.5 focus-within:ring-2 focus-within:ring-[#9ED89D]"
+      },
+      "inventory_toolbar": {
+        "position": "absolute bottom-4 left-1/2 -translate-x-1/2 z-40 pointer-events-auto",
+        "container": "bg-[#FFFBF4] border-4 border-[#5C4033] p-2 sm:p-3 rounded-[28px] shadow-[0_8px_0_rgba(92,64,51,0.2)] flex items-center gap-2 sm:gap-3",
+        "item_slot": "w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-[#FAF0E4] border-3 border-[#5C4033]/40 flex flex-col items-center justify-center relative cursor-pointer hover:border-[#5C4033] hover:scale-105 active:scale-95 transition-all",
+        "active_slot": "bg-[#FFE67D] border-3 border-[#5C4033] shadow-[0_4px_0_#5C4033] -translate-y-1.5 scale-110",
+        "slot_badge": "absolute -top-2 -right-2 bg-[#5C4033] text-[#FFFBF4] text-[10px] font-extrabold font-['Fredoka'] px-1.5 py-0.5 rounded-full border border-[#FFFBF4]",
+        "items": ["Wood Chair", "Wooden Table", "Flower Pot", "Cozy Lamp", "Wooden Fence", "Fruit Tree", "Picnic Blanket", "Garden Bench"]
+      },
+      "placement_controls": {
+        "position": "absolute bottom-24 right-4 z-40 pointer-events-auto flex flex-col gap-2 items-end",
+        "action_pill": "bg-[#9ED89D] text-[#1E431B] font-['Fredoka'] font-bold text-sm px-4 py-2.5 rounded-2xl border-3 border-[#3A8037] shadow-[0_4px_0_#3A8037] flex items-center gap-2 hover:bg-[#B0E8AF] active:translate-y-0.5 active:shadow-[0_1px_0_#3A8037] transition-all"
+      },
+      "player_list_modal": {
+        "overlay": "fixed inset-0 bg-[#3D271D]/40 backdrop-blur-sm z-50 flex items-center justify-center p-4",
+        "card": "bg-[#FFFBF4] border-4 border-[#5C4033] rounded-[32px] max-w-md w-full p-6 shadow-[0_12px_0_#5C4033] font-['Nunito']"
+      }
+    }
+  },
+  "grids_and_layouts": {
+    "viewport_wrapper": "w-screen h-screen overflow-hidden relative bg-[#7BC676] select-none font-['Nunito']",
+    "canvas_container": "absolute inset-0 z-0 cursor-crosshair",
+    "hud_container": "absolute inset-0 z-10 pointer-events-none"
+  },
+  "motion": {
+    "framer_motion_presets": {
+      "spring_pop": {
+        "type": "spring",
+        "stiffness": 400,
+        "damping": 25
+      },
+      "chat_slide": {
+        "initial": {"opacity": 0, "y": 10},
+        "animate": {"opacity": 1, "y": 0},
+        "exit": {"opacity": 0, "y": 10}
+      },
+      "modal_bounce": {
+        "initial": {"opacity": 0, "scale": 0.9, "y": 20},
+        "animate": {"opacity": 1, "scale": 1, "y": 0},
+        "exit": {"opacity": 0, "scale": 0.9, "y": 20}
+      }
+    }
+  },
+  "accessibility": {
+    "contrast": "APCA & WCAG AA compliant contrast ratio using dark espresso text (#3D271D) on cream pastel backgrounds (#FFFBF4)",
+    "focus_indicators": "focus:ring-4 focus:ring-[#9ED89D] focus:outline-none focus:ring-offset-2 focus:ring-offset-[#FFFBF4]",
+    "keyboard_shortcuts": {
+      "inventory_slots": "Keys 1 to 8 select corresponding toolbar item",
+      "chat_focus": "Key [Enter] toggles chat box focus",
+      "place_item": "Key [E] places active inventory item on grid",
+      "rotate_item": "Key [R] rotates selected placement item",
+      "pick_up_item": "Key [F] collects/picks up targeted placed item",
+      "modal_close": "Key [Escape] closes opened menus or drawers"
+    },
+    "data_testid_convention": "All interactive elements MUST have role-based kebab-case data-testid attributes (e.g. data-testid=\"create-room-button\", data-testid=\"inventory-slot-1\", data-testid=\"chat-input-field\", data-testid=\"player-name-input\")"
+  },
+  "image_urls": {
+    "cozy_nature_bg": "https://images.unsplash.com/photo-1617707713766-ee547bd0720a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzV8MHwxfHNlYXJjaHw0fHxjb3p5JTIwaXNsYW5kJTIwbmF0dXJlfGVufDB8fHx8MTc5MTM2Mzg1OHww&ixlib=rb-4.1.0&q=85",
+    "island_overview": "https://images.unsplash.com/photo-1494918913717-47991c5f4031?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzV8MHwxfHNlYXJjaHwzfHxjb3p5JTIwaXNsYW5kJTIwbmF0dXJlfGVufDB8fHx8MTc5MTM2Mzg1OHww&ixlib=rb-4.1.0&q=85"
+  },
+  "instructions_to_main_agent": [
+    "Load Google Fonts 'Fredoka' and 'Nunito' at the top of src/index.css using @import.",
+    "Do NOT use dark gradients or sleek futuristic dark themes. All non-canvas UI MUST feel like an Animal Crossing nook passport / cute cozy wooden card with soft pastel colors and rounded 3D tactile buttons.",
+    "Implement tactile button shadow effects using border-3 or border-4 in chocolate brown (#5C4033) with custom shadow-[0_4px_0_#5C4033].",
+    "The game canvas fills full width and height in background (z-0), with HUD elements overlaying on top (z-40) and modals/dialogs on top of HUD (z-50).",
+    "Include sound effect triggers (using Web Audio API synthesized cozy clicks/pops) on button presses and item selection.",
+    "Ensure every single interactive button, input, slot, tab, and badge includes a descriptive data-testid attribute for testing."
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": {
+    "anti_slop_rules": [
+      "Avoid generic dark themes or standard Vercel slate styling.",
+      "Use warm pastel background colors (#FFFBF4, #FAF0E4) paired with rich espresso brown typography (#3D271D).",
+      "Ensure elements have bold rounded borders (rounded-3xl, rounded-full) with thick 3px/4px brown borders for cozy tactile feel.",
+      "All interactive elements MUST have micro-animations (bounce, press down shadow reduction, hover scale)."
+    ],
+    "testing_requirement": "All interactive elements MUST include data-testid attribute in kebab-case."
+  }
+}
