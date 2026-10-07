@@ -24,6 +24,7 @@
 - Startup Mongo indexes (unique player_state & houses, room code) to prevent duplicate wallets/houses.
 - All verified by testing agent iteration_4 (100%; 25/25 backend tests green).
 - Town & exploration (iter 5): island redesigned as a small town — roads, 3 buildings (Nook Shop enterable by walking in; Museum & Cafe "coming soon"), 3 ponds, scattered trees. Faster movement (SPEED 4.3). Fishing at pond edges (Fish/Cast Line button) credits bells (Carp/Sea Bass/Red Snapper/Golden Trout/Old Boot). Shop opens by walking into the building (top-bar button removed); shop furniture stock rotates daily. Verified iteration_5 (100%; 28/28 backend tests).
+- Finite furniture inventory (iter 6): furniture is now a per-player count-based inventory (new players get a starter kit). Placing an object decrements its count by 1; you can't place at 0 ("out of" toast); picking an item up refunds +1 to the picker; buying special furniture adds +1 (repeatable). Toolbar slots show live count badges. Verified iteration_6 (100%; 36/36 backend tests).
 
 ## Backlog (P1/P2)
 - P1: Furniture rotation (R key), collision, item ownership/lock rules.

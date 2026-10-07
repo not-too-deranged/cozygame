@@ -88,7 +88,10 @@ async def test_init_has_wallet_and_crops_arrays():
         assert w["bells"] == 120
         assert w["seeds"] == {}
         assert w["crops"] == {}
-        assert w["unlocked"] == []
+        # Iteration 6: starter furniture kit (replaces old 'unlocked' array)
+        assert "furniture" in w and isinstance(w["furniture"], dict)
+        assert w["furniture"].get("chair") == 5
+        assert w["furniture"].get("flower") == 6
         assert "crops" in init and isinstance(init["crops"], list) and init["crops"] == []
 
 
@@ -219,7 +222,7 @@ async def test_sell_crop_requires_held_and_credits_bells():
 
 
 @pytest.mark.asyncio
-async def test_buy_furniture_rejects_overspend_and_double_buy_and_placeable():
+async def test_buy_furniture_rejects_overspend_and_is_repeatable_and_placeable():
     code = _create_room()
     async with websockets.connect(f"{WS_BASE}/api/ws/{code}") as ws:
         _, init = await _join(ws, "Shopper")
@@ -228,19 +231,22 @@ async def test_buy_furniture_rejects_overspend_and_double_buy_and_placeable():
         await ws.send(json.dumps({"type": "buy_furniture", "itemId": "fountain"}))
         assert await _recv_until(ws, "wallet", 1.2) is None, "fountain purchase should fail"
 
-        # Buy lamppost (70) -> ok
+        # Buy lamppost (70) -> ok, count becomes 1
         await ws.send(json.dumps({"type": "buy_furniture", "itemId": "lamppost"}))
         w = await _recv_until(ws, "wallet", 3)
-        assert w and w["bells"] == 50 and "lamppost" in w["unlocked"]
+        assert w and w["bells"] == 50 and w["furniture"].get("lamppost") == 1
 
-        # Buying again -> rejected
+        # Iteration 6: buy_furniture is now repeatable (stacks the count)
+        # But player can't afford another lamppost (50 bells < 70). Verify no wallet msg.
         await ws.send(json.dumps({"type": "buy_furniture", "itemId": "lamppost"}))
-        assert await _recv_until(ws, "wallet", 1.2) is None, "double-buy should be rejected"
+        assert await _recv_until(ws, "wallet", 1.2) is None, "unaffordable repeat buy should be rejected"
 
-        # Place a lamppost on island
+        # Place a lamppost on island -> count decrements to 0 (removed from dict)
         await ws.send(json.dumps({"type": "place", "itemType": "lamppost", "x": 1100, "y": 800}))
         pl = await _recv_until(ws, "place", 3)
         assert pl and pl["item"]["type"] == "lamppost"
+        wal = await _recv_until(ws, "wallet", 3)
+        assert wal and "lamppost" not in wal["furniture"], "lamppost should be removed from furniture dict at 0"
 
 
 @pytest.mark.asyncio
