@@ -38,6 +38,43 @@ async def fetch_houses(code):
     return await db.houses.find({"code": code}, {"_id": 0}).to_list(100)
 
 
+# ---------- Economy & farming ----------
+START_BELLS = 120
+
+CROP_DEFS = {
+    "carrot": {"seed_cost": 8, "sell_price": 20, "grow": 40},
+    "tomato": {"seed_cost": 10, "sell_price": 26, "grow": 45},
+    "strawberry": {"seed_cost": 14, "sell_price": 38, "grow": 60},
+    "pumpkin": {"seed_cost": 22, "sell_price": 64, "grow": 90},
+}
+
+SHOP_FURNITURE = {
+    "fountain": {"price": 140},
+    "lamppost": {"price": 70},
+    "arch": {"price": 95},
+    "piano": {"price": 160},
+}
+
+
+async def get_state(code, player_id, name=""):
+    doc = await db.player_state.find_one({"code": code, "player_id": player_id}, {"_id": 0})
+    if not doc:
+        doc = {"code": code, "player_id": player_id, "name": name,
+               "bells": START_BELLS, "seeds": {}, "crops": {}, "unlocked": []}
+        await db.player_state.insert_one(dict(doc))
+        doc.pop("_id", None)
+    return doc
+
+
+def wallet_payload(doc):
+    return {"type": "wallet", "bells": doc.get("bells", 0), "seeds": doc.get("seeds", {}),
+            "crops": doc.get("crops", {}), "unlocked": doc.get("unlocked", [])}
+
+
+async def fetch_crops(code):
+    return await db.crops.find({"code": code}, {"_id": 0}).to_list(2000)
+
+
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
@@ -153,6 +190,8 @@ async def ws_endpoint(websocket: WebSocket, code: str):
                 # send init state to joiner
                 items = await fetch_zone_items(code, "island")
                 houses = await fetch_houses(code)
+                crops = await fetch_crops(code)
+                state = await get_state(code, player_id, player["name"])
                 chat = await db.chat.find({"code": code}, {"_id": 0}).sort("ts", -1).to_list(50)
                 chat.reverse()
                 await websocket.send_json({
@@ -161,6 +200,8 @@ async def ws_endpoint(websocket: WebSocket, code: str):
                     "players": hub.players_in_zone(code, "island"),
                     "items": items,
                     "houses": houses,
+                    "crops": crops,
+                    "wallet": wallet_payload(state),
                     "chat": chat,
                 })
                 await hub.broadcast_zone(code, "island", {"type": "player_join", "player": player}, exclude=player_id)
@@ -199,6 +240,7 @@ async def ws_endpoint(websocket: WebSocket, code: str):
                     conn["player"]["dir"] = "down"
                     items = await fetch_zone_items(code, new_zone)
                     houses = await fetch_houses(code) if new_zone == "island" else []
+                    crops = await fetch_crops(code) if new_zone == "island" else []
                     await websocket.send_json({
                         "type": "zone_state",
                         "zone": new_zone,
@@ -206,6 +248,7 @@ async def ws_endpoint(websocket: WebSocket, code: str):
                         "players": hub.players_in_zone(code, new_zone),
                         "items": items,
                         "houses": houses,
+                        "crops": crops,
                         "house": house_info,
                     })
                     await hub.broadcast_zone(code, new_zone, {"type": "player_join", "player": conn["player"]}, exclude=player_id)
@@ -305,6 +348,89 @@ async def ws_endpoint(websocket: WebSocket, code: str):
                 emote = (data.get("emote") or "")[:4]
                 if emote:
                     await hub.broadcast_zone(code, zone, {"type": "emote", "id": player_id, "emote": emote})
+
+            elif mtype == "plant" and player_id:
+                conn = hub.rooms.get(code, {}).get(player_id)
+                if conn and conn["player"].get("zone") == "island":
+                    ctype = data.get("cropType")
+                    if ctype in CROP_DEFS:
+                        state = await get_state(code, player_id, conn["player"]["name"])
+                        seeds = state.get("seeds", {})
+                        if seeds.get(ctype, 0) > 0:
+                            seeds[ctype] -= 1
+                            if seeds[ctype] <= 0:
+                                seeds.pop(ctype, None)
+                            crop = {"code": code, "id": str(uuid.uuid4()), "type": ctype,
+                                    "x": float(data.get("x", SPAWN["x"])), "y": float(data.get("y", SPAWN["y"])),
+                                    "planted_at": now_iso(), "planted_by": player_id}
+                            await db.crops.insert_one(dict(crop))
+                            await db.player_state.update_one({"code": code, "player_id": player_id}, {"$set": {"seeds": seeds}})
+                            state["seeds"] = seeds
+                            crop.pop("_id", None)
+                            public = {k: v for k, v in crop.items() if k != "code"}
+                            await hub.broadcast_zone(code, "island", {"type": "plant_crop", "crop": public})
+                            await websocket.send_json(wallet_payload(state))
+
+            elif mtype == "harvest" and player_id:
+                conn = hub.rooms.get(code, {}).get(player_id)
+                if conn and conn["player"].get("zone") == "island":
+                    crop = await db.crops.find_one({"code": code, "id": data.get("cropId")}, {"_id": 0})
+                    if crop:
+                        cdef = CROP_DEFS.get(crop["type"], {"grow": 45})
+                        planted = datetime.fromisoformat(crop["planted_at"])
+                        ripe = (datetime.now(timezone.utc) - planted).total_seconds() >= cdef["grow"]
+                        if ripe:
+                            await db.crops.delete_one({"code": code, "id": crop["id"]})
+                            state = await get_state(code, player_id, conn["player"]["name"])
+                            held = state.get("crops", {})
+                            held[crop["type"]] = held.get(crop["type"], 0) + 1
+                            await db.player_state.update_one({"code": code, "player_id": player_id}, {"$set": {"crops": held}})
+                            state["crops"] = held
+                            await hub.broadcast_zone(code, "island", {"type": "harvest", "cropId": crop["id"]})
+                            await websocket.send_json(wallet_payload(state))
+
+            elif mtype == "buy_seed" and player_id:
+                conn = hub.rooms.get(code, {}).get(player_id)
+                ctype = data.get("cropType")
+                if conn and ctype in CROP_DEFS:
+                    state = await get_state(code, player_id, conn["player"]["name"])
+                    cost = CROP_DEFS[ctype]["seed_cost"]
+                    if state.get("bells", 0) >= cost:
+                        seeds = state.get("seeds", {})
+                        seeds[ctype] = seeds.get(ctype, 0) + 1
+                        new_bells = state["bells"] - cost
+                        await db.player_state.update_one({"code": code, "player_id": player_id}, {"$set": {"seeds": seeds, "bells": new_bells}})
+                        state["seeds"] = seeds; state["bells"] = new_bells
+                        await websocket.send_json(wallet_payload(state))
+
+            elif mtype == "buy_furniture" and player_id:
+                conn = hub.rooms.get(code, {}).get(player_id)
+                fid = data.get("itemId")
+                if conn and fid in SHOP_FURNITURE:
+                    state = await get_state(code, player_id, conn["player"]["name"])
+                    unlocked = state.get("unlocked", [])
+                    cost = SHOP_FURNITURE[fid]["price"]
+                    if fid not in unlocked and state.get("bells", 0) >= cost:
+                        unlocked.append(fid)
+                        new_bells = state["bells"] - cost
+                        await db.player_state.update_one({"code": code, "player_id": player_id}, {"$set": {"unlocked": unlocked, "bells": new_bells}})
+                        state["unlocked"] = unlocked; state["bells"] = new_bells
+                        await websocket.send_json(wallet_payload(state))
+
+            elif mtype == "sell_crop" and player_id:
+                conn = hub.rooms.get(code, {}).get(player_id)
+                ctype = data.get("cropType")
+                if conn and ctype in CROP_DEFS:
+                    state = await get_state(code, player_id, conn["player"]["name"])
+                    held = state.get("crops", {})
+                    if held.get(ctype, 0) > 0:
+                        held[ctype] -= 1
+                        if held[ctype] <= 0:
+                            held.pop(ctype, None)
+                        new_bells = state.get("bells", 0) + CROP_DEFS[ctype]["sell_price"]
+                        await db.player_state.update_one({"code": code, "player_id": player_id}, {"$set": {"crops": held, "bells": new_bells}})
+                        state["crops"] = held; state["bells"] = new_bells
+                        await websocket.send_json(wallet_payload(state))
 
     except WebSocketDisconnect:
         pass

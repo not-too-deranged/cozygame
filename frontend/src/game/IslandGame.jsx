@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
-import { Copy, Users, LogOut, Send, MessageCircle, X, Hand, Smile, Home, DoorOpen, Hammer, RotateCw, Paintbrush } from "lucide-react";
-import { ITEMS, ITEM_BY_ID, WORLD, HOUSE_WORLD, SPEED, PLAYER_R, FLOORS, WALLS } from "@/game/items";
+import { Copy, Users, LogOut, Send, MessageCircle, X, Hand, Smile, Home, DoorOpen, Hammer, RotateCw, Paintbrush, ShoppingBag, Coins, Sprout, Sun, Moon, Sunrise, Sunset } from "lucide-react";
+import { ITEMS, SHOP_ITEMS, CROPS, ITEM_BY_ID, WORLD, HOUSE_WORLD, SPEED, PLAYER_R, FLOORS, WALLS } from "@/game/items";
 
 const EMOTES = ["👋", "😂", "❤️", "😮", "😎", "🎉", "😢", "🌸"];
 
@@ -23,6 +23,8 @@ export default function IslandGame({ code, player, onLeave }) {
   const rotationRef = useRef(0);
   const transitionLockRef = useRef(0);
   const decorRef = useRef({ floor: "wood", wall: "cream" });
+  const cropsRef = useRef([]);
+  const walletRef = useRef({ bells: 0, seeds: {}, crops: {}, unlocked: [] });
   const keysRef = useRef({});
   const camRef = useRef({ x: 0, y: 0 });
   const lastSentRef = useRef(0);
@@ -42,6 +44,11 @@ export default function IslandGame({ code, player, onLeave }) {
   const [ownerHouse, setOwnerHouse] = useState(false);
   const [decor, setDecor] = useState({ floor: "wood", wall: "cream" });
   const [decorPanel, setDecorPanel] = useState(false);
+  const [wallet, setWallet] = useState({ bells: 0, seeds: {}, crops: {}, unlocked: [] });
+  const [shopOpen, setShopOpen] = useState(false);
+  const [shopTab, setShopTab] = useState("buy");
+  const [seedPicker, setSeedPicker] = useState(false);
+  const [clock, setClock] = useState(() => phaseLabel(skyPhase()));
   const [selectedSlot, setSelectedSlot] = useState(0);
   const selectedSlotRef = useRef(0);
   const chatInputRef = useRef(null);
@@ -66,6 +73,11 @@ export default function IslandGame({ code, player, onLeave }) {
           meRef.current = { ...meRef.current, ...msg.you };
           itemsRef.current = msg.items || [];
           housesRef.current = msg.houses || [];
+          cropsRef.current = msg.crops || [];
+          if (msg.wallet) {
+            walletRef.current = { bells: msg.wallet.bells, seeds: msg.wallet.seeds || {}, crops: msg.wallet.crops || {}, unlocked: msg.wallet.unlocked || [] };
+            setWallet(walletRef.current);
+          }
           setHasHouse((msg.houses || []).some((h) => h.owner_id === msg.you.id));
           setChat((msg.chat || []).map((m) => ({ ...m })));
           const others = {};
@@ -83,6 +95,7 @@ export default function IslandGame({ code, player, onLeave }) {
           meRef.current = { ...meRef.current, ...msg.you };
           itemsRef.current = msg.items || [];
           housesRef.current = msg.houses || housesRef.current;
+          cropsRef.current = msg.zone === "island" ? (msg.crops || []) : [];
           emotesRef.current = {};
           if (msg.house) {
             decorRef.current = { floor: msg.house.floor || "wood", wall: msg.house.wall || "cream" };
@@ -109,6 +122,16 @@ export default function IslandGame({ code, player, onLeave }) {
         case "decor":
           decorRef.current = { floor: msg.floor, wall: msg.wall };
           setDecor(decorRef.current);
+          break;
+        case "wallet":
+          walletRef.current = { bells: msg.bells, seeds: msg.seeds || {}, crops: msg.crops || {}, unlocked: msg.unlocked || [] };
+          setWallet(walletRef.current);
+          break;
+        case "plant_crop":
+          cropsRef.current = [...cropsRef.current, msg.crop];
+          break;
+        case "harvest":
+          cropsRef.current = cropsRef.current.filter((c) => c.id !== msg.cropId);
           break;
         case "players":
           setRoster(msg.players);
@@ -161,6 +184,11 @@ export default function IslandGame({ code, player, onLeave }) {
     if (chatBoxRef.current) chatBoxRef.current.scrollTop = chatBoxRef.current.scrollHeight;
   }, [chat]);
 
+  useEffect(() => {
+    const id = setInterval(() => setClock(phaseLabel(skyPhase())), 4000);
+    return () => clearInterval(id);
+  }, []);
+
   // ---------- Input ----------
   useEffect(() => {
     const down = (e) => {
@@ -178,6 +206,7 @@ export default function IslandGame({ code, player, onLeave }) {
       if (k === "e") placeItem();
       if (k === "f") pickupItem();
       if (k === "r") rotateItem();
+      if (k === "h") harvestCrop();
       if (k === "escape") setShowRoster(false);
     };
     const up = (e) => { keysRef.current[e.key.toLowerCase()] = false; };
@@ -208,7 +237,8 @@ export default function IslandGame({ code, player, onLeave }) {
     const d = me.dir;
     const x = me.x + (d === "left" ? -off : d === "right" ? off : 0);
     const y = me.y + (d === "up" ? -off : d === "down" ? off : 0);
-    const itemType = ITEMS[selectedSlotRef.current].id;
+    const list = getToolbar();
+    const itemType = (list[selectedSlotRef.current] || ITEMS[0]).id;
     send({ type: "place", itemType, x, y, rotation: rotationRef.current });
     sfx.place();
   };
@@ -287,6 +317,38 @@ export default function IslandGame({ code, player, onLeave }) {
     sfx.click();
   };
 
+  const getToolbar = () => [...ITEMS, ...SHOP_ITEMS.filter((s) => (walletRef.current.unlocked || []).includes(s.id))];
+
+  const plantSeed = (ctype) => {
+    if ((walletRef.current.seeds?.[ctype] || 0) <= 0) { toast("Buy some seeds at the Shop first! 🌱"); return; }
+    const me = meRef.current;
+    const off = 48;
+    const x = me.x + (me.dir === "left" ? -off : me.dir === "right" ? off : 0);
+    const y = me.y + (me.dir === "up" ? -off : off);
+    send({ type: "plant", cropType: ctype, x, y });
+    sfx.place();
+    setSeedPicker(false);
+  };
+
+  const harvestCrop = () => {
+    const me = meRef.current;
+    let nearest = null, best = 80 * 80;
+    for (const c of cropsRef.current) {
+      const def = CROPS[c.type];
+      if (!def) continue;
+      const ripe = (Date.now() - new Date(c.planted_at).getTime()) / 1000 >= def.grow;
+      if (!ripe) continue;
+      const dx = c.x - me.x, dy = c.y - me.y, dsq = dx * dx + dy * dy;
+      if (dsq < best) { best = dsq; nearest = c; }
+    }
+    if (nearest) { send({ type: "harvest", cropId: nearest.id }); sfx.pickup(); }
+    else toast("Walk up to a ripe crop (✨) to harvest!");
+  };
+
+  const buySeed = (ctype) => { send({ type: "buy_seed", cropType: ctype }); sfx.pop(); };
+  const buyFurniture = (id) => { send({ type: "buy_furniture", itemId: id }); sfx.pop(); };
+  const sellCrop = (ctype) => { send({ type: "sell_crop", cropType: ctype }); sfx.pop(); };
+
   const copyCode = () => {
     navigator.clipboard?.writeText(code);
     sfx.pop();
@@ -359,7 +421,7 @@ export default function IslandGame({ code, player, onLeave }) {
       if (world.w < canvas.width) cam.x = (world.w - canvas.width) / 2;
       if (world.h < canvas.height) cam.y = (world.h - canvas.height) / 2;
 
-      render(ctx, canvas, cam, me, playersRef.current, itemsRef.current, emotesRef.current, housesRef.current, zoneRef.current, decorRef.current, t);
+      render(ctx, canvas, cam, me, playersRef.current, itemsRef.current, emotesRef.current, housesRef.current, zoneRef.current, decorRef.current, cropsRef.current, t);
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
@@ -370,7 +432,8 @@ export default function IslandGame({ code, player, onLeave }) {
     // eslint-disable-next-line
   }, []);
 
-  const SlotIcon = ITEMS[selectedSlot].icon;
+  const toolbar = getToolbar();
+  const SlotIcon = (toolbar[selectedSlot] || ITEMS[0]).icon;
 
   return (
     <div className="w-screen h-screen overflow-hidden relative bg-[#7BC676] select-none font-['Nunito']">
@@ -403,14 +466,27 @@ export default function IslandGame({ code, player, onLeave }) {
           >
             {connected ? "● Live" : "○ Connecting"}
           </span>
+          <span data-testid="bells-badge" className="bg-[#FFF3CD] border-[3px] border-[#C9A33A] px-3 py-2 rounded-full font-['Fredoka'] font-bold text-[#8A6D1E] shadow-[0_4px_0_#C9A33A] flex items-center gap-1.5">
+            <Coins className="w-4 h-4" /> {wallet.bells}
+          </span>
+          <span data-testid="clock-badge" className="hidden sm:flex bg-[#FFFBF4] border-[3px] border-[#5C4033] px-3 py-2 rounded-full font-['Fredoka'] font-bold text-[#5C4033] shadow-[0_4px_0_#5C4033] items-center gap-1.5">
+            {clock.icon === "moon" ? <Moon className="w-4 h-4" /> : clock.icon === "sunrise" ? <Sunrise className="w-4 h-4" /> : clock.icon === "sunset" ? <Sunset className="w-4 h-4" /> : <Sun className="w-4 h-4" />} {clock.label}
+          </span>
         </div>
-        <button
-          data-testid="leave-button"
-          onClick={() => { sfx.click(); onLeave(); }}
-          className="pointer-events-auto bg-[#FFB7B2] border-[3px] border-[#D87F79] px-4 py-2 rounded-full font-['Fredoka'] font-bold text-[#8A2B23] shadow-[0_4px_0_#D87F79] flex items-center gap-2 hover:scale-105 active:translate-y-0.5 transition-all"
-        >
-          <LogOut className="w-4 h-4" /> Leave
-        </button>
+        <div className="flex items-center gap-2 pointer-events-auto">
+          {zone === "island" && (
+            <button data-testid="shop-button" onClick={() => { setShopOpen(true); sfx.click(); }} className="bg-[#FFE67D] border-[3px] border-[#C9A33A] px-4 py-2 rounded-full font-['Fredoka'] font-bold text-[#7A5E12] shadow-[0_4px_0_#C9A33A] flex items-center gap-2 hover:scale-105 active:translate-y-0.5 transition-all">
+              <ShoppingBag className="w-4 h-4" /> Shop
+            </button>
+          )}
+          <button
+            data-testid="leave-button"
+            onClick={() => { sfx.click(); onLeave(); }}
+            className="bg-[#FFB7B2] border-[3px] border-[#D87F79] px-4 py-2 rounded-full font-['Fredoka'] font-bold text-[#8A2B23] shadow-[0_4px_0_#D87F79] flex items-center gap-2 hover:scale-105 active:translate-y-0.5 transition-all"
+          >
+            <LogOut className="w-4 h-4" /> Leave
+          </button>
+        </div>
       </div>
 
       {/* Chat */}
@@ -601,7 +677,7 @@ export default function IslandGame({ code, player, onLeave }) {
       {/* Inventory toolbar */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 pointer-events-auto max-w-[94vw]">
         <div className="bg-[#FFFBF4] border-4 border-[#5C4033] p-2 rounded-[28px] shadow-[0_8px_0_rgba(92,64,51,0.2)] flex items-center gap-1.5 sm:gap-2 overflow-x-auto custom-scrollbar" data-testid="inventory-toolbar">
-          {ITEMS.map((it, i) => {
+          {toolbar.map((it, i) => {
             const Icon = it.icon;
             const active = selectedSlot === i;
             return (
@@ -670,7 +746,127 @@ export default function IslandGame({ code, player, onLeave }) {
         WASD / Arrows to move · 1–8 items · E place · R rotate · F pick up · walk into doors
       </div>
 
-      {/* Interior banner */}
+      {/* Farming controls (island only) */}
+      {zone === "island" && (
+        <div className="absolute left-4 top-32 z-40 pointer-events-auto flex flex-col gap-2 items-start">
+          <div className="relative">
+            <button
+              data-testid="plant-button"
+              onClick={() => { setSeedPicker((v) => !v); sfx.click(); }}
+              className="bg-[#9ED89D] text-[#1E431B] font-['Fredoka'] font-bold text-sm px-4 py-2.5 rounded-2xl border-[3px] border-[#3A8037] shadow-[0_4px_0_#3A8037] flex items-center gap-2 hover:bg-[#B0E8AF] active:translate-y-0.5 transition-all"
+            >
+              <Sprout className="w-4 h-4" /> Plant
+            </button>
+            <AnimatePresence>
+              {seedPicker && (
+                <motion.div
+                  initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }}
+                  className="absolute left-0 mt-2 bg-[#FFFBF4] border-[3px] border-[#5C4033] rounded-2xl p-2 shadow-[0_6px_0_rgba(92,64,51,0.2)] w-48 z-50"
+                  data-testid="seed-picker"
+                >
+                  <p className="text-xs font-bold uppercase tracking-wider text-[#7C5A3E] mb-1.5 px-1">Your Seeds</p>
+                  {Object.keys(CROPS).map((ck) => (
+                    <button
+                      key={ck}
+                      data-testid={`plant-seed-${ck}`}
+                      onClick={() => plantSeed(ck)}
+                      disabled={(wallet.seeds?.[ck] || 0) <= 0}
+                      className="w-full flex items-center justify-between px-2 py-1.5 rounded-xl hover:bg-[#FAF0E4] disabled:opacity-40 text-[#3D271D] font-semibold text-sm"
+                    >
+                      <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: CROPS[ck].color }} />{CROPS[ck].name}</span>
+                      <span className="text-xs text-[#7C5A3E]">x{wallet.seeds?.[ck] || 0}</span>
+                    </button>
+                  ))}
+                  <p className="text-[10px] text-[#A0836C] px-1 mt-1">Buy seeds at the Shop 🛍️</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+          <button
+            data-testid="harvest-button"
+            onClick={harvestCrop}
+            className="bg-[#FFE67D] text-[#6B4E12] font-['Fredoka'] font-bold text-sm px-4 py-2.5 rounded-2xl border-[3px] border-[#C9A33A] shadow-[0_4px_0_#C9A33A] flex items-center gap-2 hover:brightness-105 active:translate-y-0.5 transition-all"
+          >
+            <Hand className="w-4 h-4" /> Harvest <kbd className="bg-[#C9A33A]/30 px-1.5 rounded text-xs">H</kbd>
+          </button>
+        </div>
+      )}
+
+      {/* Shop modal */}
+      <AnimatePresence>
+        {shopOpen && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-[#3D271D]/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setShopOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }}
+              transition={{ type: "spring", stiffness: 400, damping: 25 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-[#FFFBF4] border-4 border-[#5C4033] rounded-[32px] max-w-lg w-full p-6 shadow-[0_12px_0_#5C4033] max-h-[85vh] overflow-y-auto custom-scrollbar"
+              data-testid="shop-modal"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-xl font-bold text-[#4A3525] font-['Fredoka'] flex items-center gap-2"><ShoppingBag className="w-5 h-5" /> Island Shop</h2>
+                <div className="flex items-center gap-2">
+                  <span className="bg-[#FFF3CD] border-2 border-[#C9A33A] px-3 py-1 rounded-full font-['Fredoka'] font-bold text-[#8A6D1E] flex items-center gap-1 text-sm"><Coins className="w-4 h-4" /> {wallet.bells}</span>
+                  <button data-testid="shop-close" onClick={() => setShopOpen(false)}><X className="w-5 h-5 text-[#A0836C]" /></button>
+                </div>
+              </div>
+              <div className="flex bg-[#FAF0E4] rounded-full p-1 border-[3px] border-[#5C4033] mb-4">
+                {["buy", "sell"].map((tb) => (
+                  <button key={tb} data-testid={`shop-tab-${tb}`} onClick={() => { setShopTab(tb); sfx.click(); }} className={`flex-1 py-2 rounded-full font-['Fredoka'] font-bold transition-all ${shopTab === tb ? "bg-[#FFFBF4] text-[#5C4033] shadow-[0_3px_0_#C9A77F]" : "text-[#A0836C]"}`}>{tb === "buy" ? "Buy" : "Sell Harvest"}</button>
+                ))}
+              </div>
+              {shopTab === "buy" ? (
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-[#7C5A3E] mb-2">Seeds</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {Object.keys(CROPS).map((ck) => (
+                        <div key={ck} className="flex items-center justify-between bg-[#FAF0E4] border-2 border-[#5C4033]/15 rounded-2xl p-2.5">
+                          <span className="flex items-center gap-2 font-bold text-[#3D271D] text-sm"><span className="w-4 h-4 rounded-full" style={{ background: CROPS[ck].color }} />{CROPS[ck].name}</span>
+                          <button data-testid={`buy-seed-${ck}`} onClick={() => buySeed(ck)} disabled={wallet.bells < CROPS[ck].seedCost} className="bg-[#9ED89D] text-[#1E431B] font-bold text-xs px-2.5 py-1.5 rounded-full border-2 border-[#3A8037] disabled:opacity-40 flex items-center gap-1"><Coins className="w-3 h-3" />{CROPS[ck].seedCost}</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-[#7C5A3E] mb-2">Special Furniture</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {SHOP_ITEMS.map((s) => {
+                        const owned = (wallet.unlocked || []).includes(s.id);
+                        const Icon = s.icon;
+                        return (
+                          <div key={s.id} className="flex items-center justify-between bg-[#FAF0E4] border-2 border-[#5C4033]/15 rounded-2xl p-2.5">
+                            <span className="flex items-center gap-2 font-bold text-[#3D271D] text-sm"><Icon className="w-4 h-4" style={{ color: s.color }} />{s.name}</span>
+                            {owned ? <span className="text-xs font-bold text-[#4CAF50] bg-[#DDF5D6] px-2 py-1 rounded-full">Owned</span> :
+                              <button data-testid={`buy-furniture-${s.id}`} onClick={() => buyFurniture(s.id)} disabled={wallet.bells < s.price} className="bg-[#9ED89D] text-[#1E431B] font-bold text-xs px-2.5 py-1.5 rounded-full border-2 border-[#3A8037] disabled:opacity-40 flex items-center gap-1"><Coins className="w-3 h-3" />{s.price}</button>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <p className="text-[10px] text-[#A0836C] mt-1">Bought furniture unlocks in your toolbar to place anywhere.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {Object.keys(CROPS).filter((ck) => (wallet.crops?.[ck] || 0) > 0).length === 0 && (
+                    <p className="text-sm text-[#A0836C] font-semibold text-center py-6">No harvest to sell yet. Plant & grow some crops! 🌱</p>
+                  )}
+                  {Object.keys(CROPS).filter((ck) => (wallet.crops?.[ck] || 0) > 0).map((ck) => (
+                    <div key={ck} className="flex items-center justify-between bg-[#FAF0E4] border-2 border-[#5C4033]/15 rounded-2xl p-2.5">
+                      <span className="flex items-center gap-2 font-bold text-[#3D271D] text-sm"><span className="w-4 h-4 rounded-full" style={{ background: CROPS[ck].color }} />{CROPS[ck].name} <span className="text-xs text-[#7C5A3E]">x{wallet.crops[ck]}</span></span>
+                      <button data-testid={`sell-crop-${ck}`} onClick={() => sellCrop(ck)} className="bg-[#FFB899] text-[#6B2E17] font-bold text-xs px-2.5 py-1.5 rounded-full border-2 border-[#D87F57] flex items-center gap-1">Sell <Coins className="w-3 h-3" />{CROPS[ck].sellPrice}</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {zone !== "island" && (
         <div className="absolute top-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none bg-[#FFF3DF] border-[3px] border-[#5C4033] rounded-full px-5 py-2 text-sm font-bold text-[#5C4033] font-['Fredoka'] shadow-[0_4px_0_#5C4033] flex items-center gap-2" data-testid="interior-banner">
           <Home className="w-4 h-4" /> Inside {houseOwner ? `${houseOwner}'s` : "a"} House — decorate freely!
@@ -681,13 +877,14 @@ export default function IslandGame({ code, player, onLeave }) {
 }
 
 // ---------- Rendering ----------
-function render(ctx, canvas, cam, me, others, items, emotes, houses, zone, decor, t) {
+function render(ctx, canvas, cam, me, others, items, emotes, houses, zone, decor, crops, t) {
   if (zone === "island") drawIsland(ctx, canvas, cam);
   else drawInterior(ctx, canvas, cam, decor);
 
   if (zone === "island") {
     const hs = [...houses].sort((a, b) => a.y - b.y);
     for (const h of hs) drawHouse(ctx, h, cam, me.id);
+    for (const c of crops) drawCrop(ctx, c, cam);
   }
 
   // placed items (sorted by y for depth)
@@ -697,6 +894,8 @@ function render(ctx, canvas, cam, me, others, items, emotes, houses, zone, decor
   // players sorted by y with local player
   const all = [...Object.values(others), me].sort((a, b) => a.y - b.y);
   for (const p of all) drawPlayer(ctx, p, cam, p.id === me.id, t, emotes[p.id]);
+
+  if (zone === "island") drawSky(ctx, canvas, t);
 }
 
 function drawIsland(ctx, canvas, cam) {
@@ -915,6 +1114,28 @@ function drawItem(ctx, it, cam) {
         ctx.beginPath(); ctx.ellipse(a, b, 6, 10, a * 0.05, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       });
       break;
+    case "fountain":
+      ctx.fillStyle = "#AEBFC9"; rr(-22, -2, 44, 16, 7); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#8ECEF1"; rr(-18, 1, 36, 9, 4); ctx.fill();
+      ctx.fillStyle = "#AEBFC9"; rr(-5, -22, 10, 22, 3); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#8ECEF1";
+      [[-9, -18], [9, -18], [0, -27]].forEach(([a, b]) => { ctx.beginPath(); ctx.arc(a, b, 3, 0, Math.PI * 2); ctx.fill(); });
+      break;
+    case "lamppost":
+      ctx.fillStyle = "#5B4A3A"; rr(-3, -30, 6, 42, 2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, -32, 8, 0, Math.PI * 2); ctx.fillStyle = "#FFE67D"; ctx.fill(); ctx.stroke();
+      break;
+    case "arch":
+      ctx.lineWidth = 5; ctx.strokeStyle = "#8B5A2B";
+      ctx.beginPath(); ctx.moveTo(-18, 14); ctx.lineTo(-18, -12); ctx.quadraticCurveTo(0, -34, 18, -12); ctx.lineTo(18, 14); ctx.stroke();
+      ctx.fillStyle = color;
+      for (let i = 0; i < 7; i++) { const a = -18 + i * 6; const yy = -12 - Math.sin((i / 6) * Math.PI) * 18; ctx.beginPath(); ctx.arc(a, yy, 4, 0, Math.PI * 2); ctx.fill(); }
+      break;
+    case "piano":
+      ctx.fillStyle = "#3D271D"; rr(-20, -16, 40, 30, 4); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#FFFBF4"; rr(-18, 4, 36, 9, 2); ctx.fill();
+      ctx.fillStyle = "#3D271D"; for (let i = -16; i < 18; i += 5) { ctx.fillRect(i, 4, 2, 9); }
+      break;
     default:
       ctx.fillStyle = color; ctx.beginPath(); ctx.arc(0, 0, 14, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   }
@@ -983,4 +1204,88 @@ function drawPlayer(ctx, p, cam, isMe, t, emote) {
     ctx.restore();
   }
   ctx.restore();
+}
+
+// ---------- Crops & day/night ----------
+function drawCrop(ctx, c, cam) {
+  const def = CROPS[c.type];
+  if (!def) return;
+  const age = (Date.now() - new Date(c.planted_at).getTime()) / 1000;
+  const prog = Math.min(1, age / def.grow);
+  const ripe = age >= def.grow;
+  const x = c.x - cam.x, y = c.y - cam.y;
+  ctx.save();
+  ctx.beginPath(); ctx.ellipse(x, y + 8, 13, 5, 0, 0, Math.PI * 2); ctx.fillStyle = "#7A4A2B"; ctx.fill();
+  if (!ripe) {
+    const h = 5 + prog * 16;
+    ctx.strokeStyle = def.leaf; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(x, y + 6); ctx.lineTo(x, y + 6 - h); ctx.stroke();
+    ctx.fillStyle = "#6FCF5B";
+    ctx.beginPath(); ctx.ellipse(x - 5, y + 6 - h * 0.7, 5, 3, -0.7, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x + 5, y + 6 - h, 5, 3, 0.7, 0, Math.PI * 2); ctx.fill();
+  } else {
+    ctx.fillStyle = def.leaf;
+    ctx.beginPath(); ctx.ellipse(x - 7, y - 8, 6, 3, -0.6, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x + 7, y - 8, 6, 3, 0.6, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y - 3, 11, 0, Math.PI * 2); ctx.fillStyle = def.color; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = "#5C4033"; ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,0.45)"; ctx.beginPath(); ctx.arc(x - 3, y - 6, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.font = "13px sans-serif"; ctx.textAlign = "center"; ctx.fillText("✨", x + 13, y - 14);
+  }
+  ctx.restore();
+}
+
+const SKY_KEYS = [
+  { t: 0.0, c: [255, 214, 150], a: 0.16 },
+  { t: 0.22, c: [255, 255, 255], a: 0.0 },
+  { t: 0.5, c: [255, 150, 70], a: 0.2 },
+  { t: 0.66, c: [120, 80, 150], a: 0.34 },
+  { t: 0.8, c: [18, 22, 66], a: 0.52 },
+  { t: 0.92, c: [10, 14, 45], a: 0.58 },
+  { t: 1.0, c: [255, 214, 150], a: 0.16 },
+];
+function skyPhase() { const CYCLE = 8 * 60 * 1000; return (Date.now() % CYCLE) / CYCLE; }
+function lerpSky(p) {
+  let i = 0;
+  while (i < SKY_KEYS.length - 1 && p > SKY_KEYS[i + 1].t) i++;
+  const k0 = SKY_KEYS[i], k1 = SKY_KEYS[Math.min(i + 1, SKY_KEYS.length - 1)];
+  const span = (k1.t - k0.t) || 1;
+  const f = Math.min(1, Math.max(0, (p - k0.t) / span));
+  const c = [0, 1, 2].map((j) => Math.round(k0.c[j] + (k1.c[j] - k0.c[j]) * f));
+  const a = k0.a + (k1.a - k0.a) * f;
+  return { c, a };
+}
+function phaseLabel(p) {
+  if (p < 0.22) return { label: "Morning", icon: "sunrise" };
+  if (p < 0.5) return { label: "Midday", icon: "sun" };
+  if (p < 0.66) return { label: "Sunset", icon: "sunset" };
+  if (p < 0.8) return { label: "Dusk", icon: "sunset" };
+  return { label: "Night", icon: "moon" };
+}
+let STARS = null;
+function getStars(w, h) {
+  if (!STARS) {
+    STARS = [];
+    for (let i = 0; i < 70; i++) STARS.push({ x: Math.random() * w, y: Math.random() * h * 0.7, r: Math.random() * 1.4 + 0.4, p: Math.random() * 6 });
+  }
+  return STARS;
+}
+function drawSky(ctx, canvas, t) {
+  const { c, a } = lerpSky(skyPhase());
+  ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const night = Math.min(1, Math.max(0, (a - 0.3) / 0.28));
+  if (night > 0) {
+    ctx.save();
+    for (const s of getStars(canvas.width, canvas.height)) {
+      const tw = 0.5 + 0.5 * Math.sin(t / 600 + s.p);
+      ctx.globalAlpha = night * tw;
+      ctx.fillStyle = "#FFFDF0";
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = night;
+    ctx.fillStyle = "#FDF6D0";
+    ctx.beginPath(); ctx.arc(canvas.width - 90, 90, 26, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
 }

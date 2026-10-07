@@ -1,4 +1,4 @@
-import { Armchair, Coffee, Flower2, Lamp, Fence, TreePine, LayoutGrid, Sofa, Bed, BookOpen, Sprout, Disc } from "lucide-react";
+import { Armchair, Coffee, Flower2, Lamp, Fence, TreePine, LayoutGrid, Sofa, Bed, BookOpen, Sprout, Disc, Waves, Lightbulb, Flower, Music2 } from "lucide-react";
 
 export const AVATAR_COLORS = [
   { name: "Peach Sunset", hex: "#FF9AA2", border: "#E06873" },
@@ -40,7 +40,21 @@ export const WALLS = {
   lavender: { name: "Lavender", base: "#E3D6F2" },
 };
 
-export const ITEM_BY_ID = Object.fromEntries(ITEMS.map((i) => [i.id, i]));
+export const SHOP_ITEMS = [
+  { id: "fountain", name: "Fountain", price: 140, icon: Waves, color: "#8ECEF1" },
+  { id: "lamppost", name: "Lamp Post", price: 70, icon: Lightbulb, color: "#C9A33A" },
+  { id: "arch", name: "Flower Arch", price: 95, icon: Flower, color: "#FF9AA2" },
+  { id: "piano", name: "Piano", price: 160, icon: Music2, color: "#5C4033" },
+];
+
+export const CROPS = {
+  carrot: { name: "Carrot", seedCost: 8, sellPrice: 20, grow: 40, color: "#F0872B", leaf: "#3FA34D" },
+  tomato: { name: "Tomato", seedCost: 10, sellPrice: 26, grow: 45, color: "#E8503A", leaf: "#3FA34D" },
+  strawberry: { name: "Strawberry", seedCost: 14, sellPrice: 38, grow: 60, color: "#E63950", leaf: "#3FA34D" },
+  pumpkin: { name: "Pumpkin", seedCost: 22, sellPrice: 64, grow: 90, color: "#E8822B", leaf: "#3FA34D" },
+};
+
+export const ITEM_BY_ID = Object.fromEntries([...ITEMS, ...SHOP_ITEMS].map((i) => [i.id, i]));
 
 export const WORLD = { w: 2000, h: 1500 };
 export const HOUSE_WORLD = { w: 900, h: 650 };
