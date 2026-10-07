@@ -58,5 +58,24 @@ export const ITEM_BY_ID = Object.fromEntries([...ITEMS, ...SHOP_ITEMS].map((i) =
 
 export const WORLD = { w: 2000, h: 1500 };
 export const HOUSE_WORLD = { w: 900, h: 650 };
-export const SPEED = 3.2;
+export const SPEED = 4.3;
 export const PLAYER_R = 18;
+
+export const PONDS = [
+  { x: 560, y: 980, rx: 150, ry: 100 },
+  { x: 1520, y: 1050, rx: 125, ry: 92 },
+  { x: 320, y: 300, rx: 120, ry: 85 },
+];
+
+export const TOWN = [
+  { id: "shop", name: "Nook Shop", x: 1000, y: 430, color: "#FFE67D", enter: "shop" },
+  { id: "museum", name: "Museum", x: 680, y: 470, color: "#C7CEEA", enter: "soon" },
+  { id: "cafe", name: "Cafe", x: 1330, y: 500, color: "#FFB899", enter: "soon" },
+];
+
+export const SCENERY = [
+  { x: 180, y: 300 }, { x: 430, y: 200, s: 1.1 }, { x: 1700, y: 280 }, { x: 1840, y: 520 },
+  { x: 160, y: 760 }, { x: 540, y: 1260, s: 1.2 }, { x: 1760, y: 820 }, { x: 1850, y: 1180 },
+  { x: 840, y: 250 }, { x: 1180, y: 250 }, { x: 150, y: 1320 }, { x: 1820, y: 1320, s: 1.1 },
+  { x: 380, y: 1480 }, { x: 1500, y: 300, s: 0.9 },
+];

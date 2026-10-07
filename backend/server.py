@@ -55,6 +55,14 @@ SHOP_FURNITURE = {
     "piano": {"price": 160},
 }
 
+FISH = [
+    {"name": "Carp", "value": 16, "w": 30},
+    {"name": "Sea Bass", "value": 22, "w": 28},
+    {"name": "Red Snapper", "value": 34, "w": 18},
+    {"name": "Golden Trout", "value": 60, "w": 8},
+    {"name": "Old Boot", "value": 3, "w": 16},
+]
+
 
 async def get_state(code, player_id, name=""):
     doc = await db.player_state.find_one({"code": code, "player_id": player_id}, {"_id": 0})
@@ -431,6 +439,19 @@ async def ws_endpoint(websocket: WebSocket, code: str):
                         await db.player_state.update_one({"code": code, "player_id": player_id}, {"$set": {"crops": held, "bells": new_bells}})
                         state["crops"] = held; state["bells"] = new_bells
                         await websocket.send_json(wallet_payload(state))
+
+            elif mtype == "fish" and player_id:
+                conn = hub.rooms.get(code, {}).get(player_id)
+                if conn and conn["player"].get("zone") == "island":
+                    catch = random.choices(FISH, weights=[f["w"] for f in FISH])[0]
+                    state = await get_state(code, player_id, conn["player"]["name"])
+                    new_bells = state.get("bells", 0) + catch["value"]
+                    await db.player_state.update_one({"code": code, "player_id": player_id}, {"$set": {"bells": new_bells}})
+                    state["bells"] = new_bells
+                    payload = wallet_payload(state)
+                    payload["caught"] = catch["name"]
+                    payload["caught_value"] = catch["value"]
+                    await websocket.send_json(payload)
 
     except WebSocketDisconnect:
         pass

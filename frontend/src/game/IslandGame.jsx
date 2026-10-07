@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
-import { Copy, Users, LogOut, Send, MessageCircle, X, Hand, Smile, Home, DoorOpen, Hammer, RotateCw, Paintbrush, ShoppingBag, Coins, Sprout, Sun, Moon, Sunrise, Sunset } from "lucide-react";
-import { ITEMS, SHOP_ITEMS, CROPS, ITEM_BY_ID, WORLD, HOUSE_WORLD, SPEED, PLAYER_R, FLOORS, WALLS } from "@/game/items";
+import { Copy, Users, LogOut, Send, MessageCircle, X, Hand, Smile, Home, DoorOpen, Hammer, RotateCw, Paintbrush, ShoppingBag, Coins, Sprout, Sun, Moon, Sunrise, Sunset, Fish } from "lucide-react";
+import { ITEMS, SHOP_ITEMS, CROPS, PONDS, TOWN, SCENERY, ITEM_BY_ID, WORLD, HOUSE_WORLD, SPEED, PLAYER_R, FLOORS, WALLS } from "@/game/items";
 
 const EMOTES = ["👋", "😂", "❤️", "😮", "😎", "🎉", "😢", "🌸"];
 
@@ -25,6 +25,8 @@ export default function IslandGame({ code, player, onLeave }) {
   const decorRef = useRef({ floor: "wood", wall: "cream" });
   const cropsRef = useRef([]);
   const walletRef = useRef({ bells: 0, seeds: {}, crops: {}, unlocked: [] });
+  const nearBuildingRef = useRef(null);
+  const nearWaterRef = useRef(false);
   const keysRef = useRef({});
   const camRef = useRef({ x: 0, y: 0 });
   const lastSentRef = useRef(0);
@@ -48,6 +50,7 @@ export default function IslandGame({ code, player, onLeave }) {
   const [shopOpen, setShopOpen] = useState(false);
   const [shopTab, setShopTab] = useState("buy");
   const [seedPicker, setSeedPicker] = useState(false);
+  const [nearWater, setNearWater] = useState(false);
   const [clock, setClock] = useState(() => phaseLabel(skyPhase()));
   const [selectedSlot, setSelectedSlot] = useState(0);
   const selectedSlotRef = useRef(0);
@@ -126,6 +129,10 @@ export default function IslandGame({ code, player, onLeave }) {
         case "wallet":
           walletRef.current = { bells: msg.bells, seeds: msg.seeds || {}, crops: msg.crops || {}, unlocked: msg.unlocked || [] };
           setWallet(walletRef.current);
+          if (msg.caught) {
+            if (msg.caught === "Old Boot") toast(`Aw, an Old Boot... +${msg.caught_value} bells`);
+            else toast.success(`You caught a ${msg.caught}! +${msg.caught_value} bells 🎣`);
+          }
           break;
         case "plant_crop":
           cropsRef.current = [...cropsRef.current, msg.crop];
@@ -349,6 +356,12 @@ export default function IslandGame({ code, player, onLeave }) {
   const buyFurniture = (id) => { send({ type: "buy_furniture", itemId: id }); sfx.pop(); };
   const sellCrop = (ctype) => { send({ type: "sell_crop", cropType: ctype }); sfx.pop(); };
 
+  const goFish = () => {
+    if (!nearWaterRef.current) { toast("Find a pond and stand at its edge to fish! 🎣"); return; }
+    send({ type: "fish" });
+    sfx.pop();
+  };
+
   const copyCode = () => {
     navigator.clipboard?.writeText(code);
     sfx.pop();
@@ -409,6 +422,23 @@ export default function IslandGame({ code, player, onLeave }) {
             sfx.pop();
           }
         }
+      }
+
+      // town & water proximity (island)
+      if (zoneRef.current === "island") {
+        let nb = null;
+        for (const b of TOWN) {
+          if (Math.abs(me.x - b.x) < 48 && me.y > b.y - 10 && me.y < b.y + 80) { nb = b; break; }
+        }
+        if (nb && nearBuildingRef.current !== nb.id) {
+          nearBuildingRef.current = nb.id;
+          if (nb.enter === "shop") { setShopOpen(true); sfx.pop(); }
+          else toast(`The ${nb.name} is coming soon! ✨`);
+        } else if (!nb) {
+          nearBuildingRef.current = null;
+        }
+        const nw = PONDS.some((p) => ((me.x - p.x) ** 2) / ((p.rx + 60) ** 2) + ((me.y - p.y) ** 2) / ((p.ry + 60) ** 2) <= 1);
+        if (nw !== nearWaterRef.current) { nearWaterRef.current = nw; setNearWater(nw); }
       }
 
       // camera
@@ -474,11 +504,6 @@ export default function IslandGame({ code, player, onLeave }) {
           </span>
         </div>
         <div className="flex items-center gap-2 pointer-events-auto">
-          {zone === "island" && (
-            <button data-testid="shop-button" onClick={() => { setShopOpen(true); sfx.click(); }} className="bg-[#FFE67D] border-[3px] border-[#C9A33A] px-4 py-2 rounded-full font-['Fredoka'] font-bold text-[#7A5E12] shadow-[0_4px_0_#C9A33A] flex items-center gap-2 hover:scale-105 active:translate-y-0.5 transition-all">
-              <ShoppingBag className="w-4 h-4" /> Shop
-            </button>
-          )}
           <button
             data-testid="leave-button"
             onClick={() => { sfx.click(); onLeave(); }}
@@ -789,6 +814,13 @@ export default function IslandGame({ code, player, onLeave }) {
           >
             <Hand className="w-4 h-4" /> Harvest <kbd className="bg-[#C9A33A]/30 px-1.5 rounded text-xs">H</kbd>
           </button>
+          <button
+            data-testid="fish-button"
+            onClick={goFish}
+            className={`font-['Fredoka'] font-bold text-sm px-4 py-2.5 rounded-2xl border-[3px] flex items-center gap-2 active:translate-y-0.5 transition-all ${nearWater ? "bg-[#8ECEF1] text-[#0F4C66] border-[#4FA3C9] shadow-[0_4px_0_#4FA3C9] hover:brightness-105 animate-float-bob" : "bg-[#D7E7EC] text-[#6B8A94] border-[#9DBAC2] shadow-[0_4px_0_#9DBAC2]"}`}
+          >
+            <Fish className="w-4 h-4" /> {nearWater ? "Cast Line!" : "Fish"}
+          </button>
         </div>
       )}
 
@@ -833,9 +865,9 @@ export default function IslandGame({ code, player, onLeave }) {
                     </div>
                   </div>
                   <div>
-                    <p className="text-xs font-bold uppercase tracking-wider text-[#7C5A3E] mb-2">Special Furniture</p>
+                    <p className="text-xs font-bold uppercase tracking-wider text-[#7C5A3E] mb-2">Today's Furniture <span className="text-[#C9A33A]">🔄</span></p>
                     <div className="grid grid-cols-2 gap-2">
-                      {SHOP_ITEMS.map((s) => {
+                      {[0, 1].map((i) => SHOP_ITEMS[(Math.floor(Date.now() / (8 * 60 * 1000)) + i) % SHOP_ITEMS.length]).map((s) => {
                         const owned = (wallet.unlocked || []).includes(s.id);
                         const Icon = s.icon;
                         return (
@@ -847,7 +879,7 @@ export default function IslandGame({ code, player, onLeave }) {
                         );
                       })}
                     </div>
-                    <p className="text-[10px] text-[#A0836C] mt-1">Bought furniture unlocks in your toolbar to place anywhere.</p>
+                    <p className="text-[10px] text-[#A0836C] mt-1">Stock rotates daily · bought furniture unlocks in your toolbar.</p>
                   </div>
                 </div>
               ) : (
@@ -904,31 +936,64 @@ function drawIsland(ctx, canvas, cam) {
   ctx.fillRect(0, 0, W, H);
 
   const tile = 80;
-  const startX = Math.floor(cam.x / tile) * tile;
-  const startY = Math.floor(cam.y / tile) * tile;
-  for (let gx = startX; gx < cam.x + W + tile; gx += tile) {
-    for (let gy = startY; gy < cam.y + H + tile; gy += tile) {
-      if (((gx / tile) + (gy / tile)) % 2 === 0) {
-        ctx.fillStyle = "rgba(255,255,255,0.05)";
-        ctx.fillRect(gx - cam.x, gy - cam.y, tile, tile);
-      }
-    }
-  }
+  const sx = Math.floor(cam.x / tile) * tile, sy = Math.floor(cam.y / tile) * tile;
+  for (let gx = sx; gx < cam.x + W + tile; gx += tile)
+    for (let gy = sy; gy < cam.y + H + tile; gy += tile)
+      if (((gx / tile) + (gy / tile)) % 2 === 0) { ctx.fillStyle = "rgba(255,255,255,0.05)"; ctx.fillRect(gx - cam.x, gy - cam.y, tile, tile); }
 
   ctx.strokeStyle = "#F4E2B8";
   ctx.lineWidth = 26;
   ctx.strokeRect(13 - cam.x, 13 - cam.y, WORLD.w - 26, WORLD.h - 26);
 
-  drawPond(ctx, 650 - cam.x, 520 - cam.y, 150, 100);
-  drawPond(ctx, 1450 - cam.x, 1000 - cam.y, 120, 90);
+  // roads
+  ctx.strokeStyle = "#D9C29A"; ctx.lineCap = "round";
+  ctx.lineWidth = 56;
+  ctx.beginPath(); ctx.moveTo(1000 - cam.x, 320 - cam.y); ctx.lineTo(1000 - cam.x, 1420 - cam.y); ctx.stroke();
+  ctx.lineWidth = 44;
+  ctx.beginPath(); ctx.moveTo(240 - cam.x, 620 - cam.y); ctx.lineTo(1790 - cam.x, 620 - cam.y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(1000 - cam.x, 1000 - cam.y); ctx.lineTo(1660 - cam.x, 1240 - cam.y); ctx.stroke();
+  ctx.strokeStyle = "rgba(255,255,255,0.4)"; ctx.lineWidth = 4; ctx.setLineDash([16, 18]);
+  ctx.beginPath(); ctx.moveTo(1000 - cam.x, 320 - cam.y); ctx.lineTo(1000 - cam.x, 1420 - cam.y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(240 - cam.x, 620 - cam.y); ctx.lineTo(1790 - cam.x, 620 - cam.y); ctx.stroke();
+  ctx.setLineDash([]);
 
-  ctx.strokeStyle = "#D9C29A";
-  ctx.lineWidth = 46;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(300 - cam.x, 300 - cam.y);
-  ctx.quadraticCurveTo(1000 - cam.x, 750 - cam.y, 1700 - cam.x, 1200 - cam.y);
-  ctx.stroke();
+  for (const p of PONDS) drawPond(ctx, p.x - cam.x, p.y - cam.y, p.rx, p.ry);
+  for (const s of SCENERY) drawTreeAt(ctx, s.x - cam.x, s.y - cam.y, s.s || 1);
+  for (const b of TOWN) drawTownBuilding(ctx, b, cam);
+}
+
+function drawTreeAt(ctx, x, y, s = 1) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+  ctx.beginPath(); ctx.ellipse(0, 12, 20, 7, 0, 0, Math.PI * 2); ctx.fillStyle = "rgba(0,0,0,0.12)"; ctx.fill();
+  ctx.fillStyle = "#8B5A2B"; ctx.beginPath(); ctx.roundRect(-7, -6, 14, 24, 3); ctx.fill();
+  ctx.strokeStyle = "#5C4033"; ctx.lineWidth = 2.5; ctx.stroke();
+  ctx.beginPath(); ctx.arc(0, -28, 28, 0, Math.PI * 2); ctx.fillStyle = "#5BB85C"; ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.arc(-14, -20, 18, 0, Math.PI * 2); ctx.fillStyle = "#6FCF5B"; ctx.fill();
+  ctx.beginPath(); ctx.arc(14, -22, 16, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function drawTownBuilding(ctx, b, cam) {
+  const x = b.x - cam.x, y = b.y - cam.y;
+  ctx.save();
+  ctx.beginPath(); ctx.ellipse(x, y + 8, 86, 18, 0, 0, Math.PI * 2); ctx.fillStyle = "rgba(0,0,0,0.12)"; ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = "#5C4033";
+  ctx.fillStyle = "#FFF3DF"; ctx.beginPath(); ctx.roundRect(x - 78, y - 96, 156, 100, 10); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.roundRect(x - 88, y - 122, 176, 30, 8); ctx.fillStyle = b.color; ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  for (let i = -88; i < 88; i += 24) ctx.fillRect(x + i, y - 122, 12, 30);
+  ctx.strokeRect(x - 88, y - 122, 176, 30);
+  ctx.fillStyle = "#8B5A2B"; ctx.beginPath(); ctx.roundRect(x - 20, y - 52, 40, 56, 5); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "#FFE67D"; ctx.beginPath(); ctx.arc(x + 11, y - 24, 2.5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#AEE3F5";
+  ctx.beginPath(); ctx.roundRect(x - 64, y - 76, 34, 30, 4); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.roundRect(x + 30, y - 76, 34, 30, 4); ctx.fill(); ctx.stroke();
+  ctx.font = "bold 16px Fredoka, sans-serif";
+  const w = ctx.measureText(b.name).width + 24;
+  ctx.fillStyle = "#FFFBF4"; ctx.beginPath(); ctx.roundRect(x - w / 2, y - 152, w, 26, 13); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "#3D271D"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(b.name, x, y - 139);
+  ctx.restore();
 }
 
 function drawInterior(ctx, canvas, cam, decor) {
