@@ -185,6 +185,11 @@ async def ws_endpoint(websocket: WebSocket, code: str):
                     await db.items.delete_one({"code": code, "id": item_id})
                     await hub.broadcast(code, {"type": "pickup", "itemId": item_id})
 
+            elif mtype == "emote" and player_id:
+                emote = (data.get("emote") or "")[:4]
+                if emote:
+                    await hub.broadcast(code, {"type": "emote", "id": player_id, "emote": emote})
+
     except WebSocketDisconnect:
         pass
     except Exception as e:

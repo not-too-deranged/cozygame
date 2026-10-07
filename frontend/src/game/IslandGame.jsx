@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
-import { Copy, Users, LogOut, Send, MessageCircle, X, Package, Hand } from "lucide-react";
+import { Copy, Users, LogOut, Send, MessageCircle, X, Hand, Smile } from "lucide-react";
+
+const EMOTES = ["👋", "😂", "❤️", "😮", "😎", "🎉", "😢", "🌸"];
 import { ITEMS, ITEM_BY_ID, WORLD, SPEED, PLAYER_R } from "@/game/items";
 import { sfx } from "@/game/sound";
 
@@ -13,6 +15,7 @@ export default function IslandGame({ code, player, onLeave }) {
   const meRef = useRef({ ...player, x: 1000, y: 750, dir: "down" });
   const playersRef = useRef({}); // id -> player (others)
   const itemsRef = useRef([]); // placed items
+  const emotesRef = useRef({}); // id -> { emote, until }
   const keysRef = useRef({});
   const camRef = useRef({ x: 0, y: 0 });
   const lastSentRef = useRef(0);
@@ -24,6 +27,7 @@ export default function IslandGame({ code, player, onLeave }) {
   const [chatInput, setChatInput] = useState("");
   const [chatOpen, setChatOpen] = useState(true);
   const [showRoster, setShowRoster] = useState(false);
+  const [emotePicker, setEmotePicker] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState(0);
   const selectedSlotRef = useRef(0);
   const chatInputRef = useRef(null);
@@ -91,6 +95,9 @@ export default function IslandGame({ code, player, onLeave }) {
           break;
         case "pickup":
           itemsRef.current = itemsRef.current.filter((i) => i.id !== msg.itemId);
+          break;
+        case "emote":
+          emotesRef.current[msg.id] = { emote: msg.emote, until: performance.now() + 2200 };
           break;
         default:
           break;
@@ -173,6 +180,13 @@ export default function IslandGame({ code, player, onLeave }) {
     setChatInput("");
   };
 
+  const sendEmote = (emote) => {
+    emotesRef.current[meRef.current.id] = { emote, until: performance.now() + 2200 };
+    send({ type: "emote", emote });
+    sfx.pop();
+    setEmotePicker(false);
+  };
+
   const copyCode = () => {
     navigator.clipboard?.writeText(code);
     sfx.pop();
@@ -222,7 +236,7 @@ export default function IslandGame({ code, player, onLeave }) {
       if (WORLD.w < canvas.width) cam.x = (WORLD.w - canvas.width) / 2;
       if (WORLD.h < canvas.height) cam.y = (WORLD.h - canvas.height) / 2;
 
-      render(ctx, canvas, cam, me, playersRef.current, itemsRef.current, t);
+      render(ctx, canvas, cam, me, playersRef.current, itemsRef.current, emotesRef.current, t);
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
@@ -330,6 +344,35 @@ export default function IslandGame({ code, player, onLeave }) {
 
       {/* Placement controls */}
       <div className="absolute bottom-28 right-4 z-40 pointer-events-auto flex flex-col gap-2 items-end">
+        <AnimatePresence>
+          {emotePicker && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.8, y: 10 }}
+              className="bg-[#FFFBF4] border-[3px] border-[#5C4033] rounded-3xl p-2 shadow-[0_6px_0_rgba(92,64,51,0.2)] grid grid-cols-4 gap-1.5"
+              data-testid="emote-picker"
+            >
+              {EMOTES.map((e) => (
+                <button
+                  key={e}
+                  data-testid={`emote-${e}`}
+                  onClick={() => sendEmote(e)}
+                  className="w-10 h-10 text-2xl rounded-xl bg-[#FAF0E4] border-2 border-[#5C4033]/20 hover:bg-[#FFE67D] hover:scale-110 active:scale-95 transition-all flex items-center justify-center"
+                >
+                  {e}
+                </button>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <button
+          data-testid="emote-button"
+          onClick={() => { setEmotePicker((v) => !v); sfx.click(); }}
+          className="bg-[#D3B6ED] text-[#4A2E6B] font-['Fredoka'] font-bold text-sm px-4 py-2.5 rounded-2xl border-[3px] border-[#A97FD6] shadow-[0_4px_0_#A97FD6] flex items-center gap-2 hover:brightness-105 active:translate-y-0.5 active:shadow-[0_1px_0_#A97FD6] transition-all"
+        >
+          <Smile className="w-4 h-4" /> Emote
+        </button>
         <button
           data-testid="place-button"
           onClick={placeItem}
@@ -422,7 +465,7 @@ export default function IslandGame({ code, player, onLeave }) {
 }
 
 // ---------- Rendering ----------
-function render(ctx, canvas, cam, me, others, items, t) {
+function render(ctx, canvas, cam, me, others, items, emotes, t) {
   const W = canvas.width, H = canvas.height;
   // grass base
   ctx.fillStyle = "#7BC676";
@@ -465,7 +508,7 @@ function render(ctx, canvas, cam, me, others, items, t) {
 
   // players sorted by y with local player
   const all = [...Object.values(others), me].sort((a, b) => a.y - b.y);
-  for (const p of all) drawPlayer(ctx, p, cam, p.id === me.id, t);
+  for (const p of all) drawPlayer(ctx, p, cam, p.id === me.id, t, emotes[p.id]);
 }
 
 function drawPond(ctx, x, y, rx, ry) {
@@ -553,7 +596,7 @@ function drawItem(ctx, it, cam) {
   ctx.restore();
 }
 
-function drawPlayer(ctx, p, cam, isMe, t) {
+function drawPlayer(ctx, p, cam, isMe, t, emote) {
   const bob = p.moving ? Math.sin(t / 90) * 2 : 0;
   const x = p.x - cam.x, y = p.y - cam.y + bob;
   ctx.save();
@@ -602,5 +645,17 @@ function drawPlayer(ctx, p, cam, isMe, t) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(label, x, y - PLAYER_R - 13);
+
+  // floating emote
+  if (emote && emote.until > t) {
+    const age = (emote.until - t) / 2200; // 1 -> 0
+    const pop = age > 0.85 ? (1 - age) / 0.15 : 1;
+    const ey2 = y - PLAYER_R - 40 - (1 - age) * 14;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, age * 3);
+    ctx.font = `${Math.round(30 * pop)}px sans-serif`;
+    ctx.fillText(emote.emote, x, ey2);
+    ctx.restore();
+  }
   ctx.restore();
 }
