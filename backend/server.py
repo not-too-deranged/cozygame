@@ -55,6 +55,11 @@ SHOP_FURNITURE = {
     "piano": {"price": 160},
 }
 
+STARTER_FURNITURE = {
+    "chair": 5, "table": 5, "flower": 6, "lamp": 5, "fence": 8, "tree": 5,
+    "blanket": 4, "bench": 4, "bed": 3, "rug": 5, "bookshelf": 4, "plant": 6,
+}
+
 FISH = [
     {"name": "Carp", "value": 16, "w": 30},
     {"name": "Sea Bass", "value": 22, "w": 28},
@@ -68,15 +73,18 @@ async def get_state(code, player_id, name=""):
     doc = await db.player_state.find_one({"code": code, "player_id": player_id}, {"_id": 0})
     if not doc:
         doc = {"code": code, "player_id": player_id, "name": name,
-               "bells": START_BELLS, "seeds": {}, "crops": {}, "unlocked": []}
+               "bells": START_BELLS, "seeds": {}, "crops": {}, "furniture": dict(STARTER_FURNITURE)}
         await db.player_state.insert_one(dict(doc))
         doc.pop("_id", None)
+    elif "furniture" not in doc:
+        await db.player_state.update_one({"code": code, "player_id": player_id}, {"$set": {"furniture": dict(STARTER_FURNITURE)}})
+        doc["furniture"] = dict(STARTER_FURNITURE)
     return doc
 
 
 def wallet_payload(doc):
     return {"type": "wallet", "bells": doc.get("bells", 0), "seeds": doc.get("seeds", {}),
-            "crops": doc.get("crops", {}), "unlocked": doc.get("unlocked", [])}
+            "crops": doc.get("crops", {}), "furniture": doc.get("furniture", {})}
 
 
 async def fetch_crops(code):
@@ -323,32 +331,50 @@ async def ws_endpoint(websocket: WebSocket, code: str):
             elif mtype == "place" and player_id:
                 conn = hub.rooms.get(code, {}).get(player_id)
                 zone = conn["player"].get("zone", "island") if conn else "island"
-                try:
-                    rot = (round(int(data.get("rotation", 0) or 0) / 90) * 90) % 360
-                except (ValueError, TypeError):
-                    rot = 0
-                item = PlacedItem(
-                    type=data.get("itemType", "flower"),
-                    x=float(data.get("x", SPAWN["x"])),
-                    y=float(data.get("y", SPAWN["y"])),
-                    rotation=rot,
-                    placed_by=player_id,
-                )
-                doc = item.model_dump()
-                doc["code"] = code
-                doc["zone"] = zone
-                await db.items.insert_one(dict(doc))
-                doc.pop("_id", None)
-                public = {k: v for k, v in doc.items() if k != "code"}
-                await hub.broadcast_zone(code, zone, {"type": "place", "item": public})
+                itype = data.get("itemType", "flower")
+                state = await get_state(code, player_id, conn["player"]["name"] if conn else "")
+                fur = state.get("furniture", {})
+                if fur.get(itype, 0) > 0:
+                    try:
+                        rot = (round(int(data.get("rotation", 0) or 0) / 90) * 90) % 360
+                    except (ValueError, TypeError):
+                        rot = 0
+                    item = PlacedItem(
+                        type=itype,
+                        x=float(data.get("x", SPAWN["x"])),
+                        y=float(data.get("y", SPAWN["y"])),
+                        rotation=rot,
+                        placed_by=player_id,
+                    )
+                    doc = item.model_dump()
+                    doc["code"] = code
+                    doc["zone"] = zone
+                    await db.items.insert_one(dict(doc))
+                    doc.pop("_id", None)
+                    fur[itype] -= 1
+                    if fur[itype] <= 0:
+                        fur.pop(itype, None)
+                    await db.player_state.update_one({"code": code, "player_id": player_id}, {"$set": {"furniture": fur}})
+                    state["furniture"] = fur
+                    public = {k: v for k, v in doc.items() if k != "code"}
+                    await hub.broadcast_zone(code, zone, {"type": "place", "item": public})
+                    await websocket.send_json(wallet_payload(state))
 
             elif mtype == "pickup" and player_id:
                 conn = hub.rooms.get(code, {}).get(player_id)
                 zone = conn["player"].get("zone", "island") if conn else "island"
                 item_id = data.get("itemId")
                 if item_id:
-                    await db.items.delete_one({"code": code, "id": item_id})
-                    await hub.broadcast_zone(code, zone, {"type": "pickup", "itemId": item_id})
+                    picked = await db.items.find_one({"code": code, "id": item_id}, {"_id": 0})
+                    if picked:
+                        await db.items.delete_one({"code": code, "id": item_id})
+                        await hub.broadcast_zone(code, zone, {"type": "pickup", "itemId": item_id})
+                        state = await get_state(code, player_id, conn["player"]["name"] if conn else "")
+                        fur = state.get("furniture", {})
+                        fur[picked["type"]] = fur.get(picked["type"], 0) + 1
+                        await db.player_state.update_one({"code": code, "player_id": player_id}, {"$set": {"furniture": fur}})
+                        state["furniture"] = fur
+                        await websocket.send_json(wallet_payload(state))
 
             elif mtype == "emote" and player_id:
                 conn = hub.rooms.get(code, {}).get(player_id)
@@ -416,13 +442,13 @@ async def ws_endpoint(websocket: WebSocket, code: str):
                 fid = data.get("itemId")
                 if conn and fid in SHOP_FURNITURE:
                     state = await get_state(code, player_id, conn["player"]["name"])
-                    unlocked = state.get("unlocked", [])
                     cost = SHOP_FURNITURE[fid]["price"]
-                    if fid not in unlocked and state.get("bells", 0) >= cost:
-                        unlocked.append(fid)
+                    if state.get("bells", 0) >= cost:
+                        fur = state.get("furniture", {})
+                        fur[fid] = fur.get(fid, 0) + 1
                         new_bells = state["bells"] - cost
-                        await db.player_state.update_one({"code": code, "player_id": player_id}, {"$set": {"unlocked": unlocked, "bells": new_bells}})
-                        state["unlocked"] = unlocked; state["bells"] = new_bells
+                        await db.player_state.update_one({"code": code, "player_id": player_id}, {"$set": {"furniture": fur, "bells": new_bells}})
+                        state["furniture"] = fur; state["bells"] = new_bells
                         await websocket.send_json(wallet_payload(state))
 
             elif mtype == "sell_crop" and player_id:

@@ -24,7 +24,7 @@ export default function IslandGame({ code, player, onLeave }) {
   const transitionLockRef = useRef(0);
   const decorRef = useRef({ floor: "wood", wall: "cream" });
   const cropsRef = useRef([]);
-  const walletRef = useRef({ bells: 0, seeds: {}, crops: {}, unlocked: [] });
+  const walletRef = useRef({ bells: 0, seeds: {}, crops: {}, furniture: {} });
   const nearBuildingRef = useRef(null);
   const nearWaterRef = useRef(false);
   const keysRef = useRef({});
@@ -46,7 +46,7 @@ export default function IslandGame({ code, player, onLeave }) {
   const [ownerHouse, setOwnerHouse] = useState(false);
   const [decor, setDecor] = useState({ floor: "wood", wall: "cream" });
   const [decorPanel, setDecorPanel] = useState(false);
-  const [wallet, setWallet] = useState({ bells: 0, seeds: {}, crops: {}, unlocked: [] });
+  const [wallet, setWallet] = useState({ bells: 0, seeds: {}, crops: {}, furniture: {} });
   const [shopOpen, setShopOpen] = useState(false);
   const [shopTab, setShopTab] = useState("buy");
   const [seedPicker, setSeedPicker] = useState(false);
@@ -78,7 +78,7 @@ export default function IslandGame({ code, player, onLeave }) {
           housesRef.current = msg.houses || [];
           cropsRef.current = msg.crops || [];
           if (msg.wallet) {
-            walletRef.current = { bells: msg.wallet.bells, seeds: msg.wallet.seeds || {}, crops: msg.wallet.crops || {}, unlocked: msg.wallet.unlocked || [] };
+            walletRef.current = { bells: msg.wallet.bells, seeds: msg.wallet.seeds || {}, crops: msg.wallet.crops || {}, furniture: msg.wallet.furniture || {} };
             setWallet(walletRef.current);
           }
           setHasHouse((msg.houses || []).some((h) => h.owner_id === msg.you.id));
@@ -127,7 +127,7 @@ export default function IslandGame({ code, player, onLeave }) {
           setDecor(decorRef.current);
           break;
         case "wallet":
-          walletRef.current = { bells: msg.bells, seeds: msg.seeds || {}, crops: msg.crops || {}, unlocked: msg.unlocked || [] };
+          walletRef.current = { bells: msg.bells, seeds: msg.seeds || {}, crops: msg.crops || {}, furniture: msg.furniture || {} };
           setWallet(walletRef.current);
           if (msg.caught) {
             if (msg.caught === "Old Boot") toast(`Aw, an Old Boot... +${msg.caught_value} bells`);
@@ -245,8 +245,9 @@ export default function IslandGame({ code, player, onLeave }) {
     const x = me.x + (d === "left" ? -off : d === "right" ? off : 0);
     const y = me.y + (d === "up" ? -off : d === "down" ? off : 0);
     const list = getToolbar();
-    const itemType = (list[selectedSlotRef.current] || ITEMS[0]).id;
-    send({ type: "place", itemType, x, y, rotation: rotationRef.current });
+    const it = list[selectedSlotRef.current] || ITEMS[0];
+    if ((walletRef.current.furniture?.[it.id] || 0) <= 0) { toast(`You're out of ${it.name}! Buy more at the shop.`); return; }
+    send({ type: "place", itemType: it.id, x, y, rotation: rotationRef.current });
     sfx.place();
   };
 
@@ -324,7 +325,7 @@ export default function IslandGame({ code, player, onLeave }) {
     sfx.click();
   };
 
-  const getToolbar = () => [...ITEMS, ...SHOP_ITEMS.filter((s) => (walletRef.current.unlocked || []).includes(s.id))];
+  const getToolbar = () => [...ITEMS, ...SHOP_ITEMS.filter((s) => (walletRef.current.furniture?.[s.id] || 0) > 0)];
 
   const plantSeed = (ctype) => {
     if ((walletRef.current.seeds?.[ctype] || 0) <= 0) { toast("Buy some seeds at the Shop first! 🌱"); return; }
@@ -705,21 +706,22 @@ export default function IslandGame({ code, player, onLeave }) {
           {toolbar.map((it, i) => {
             const Icon = it.icon;
             const active = selectedSlot === i;
+            const count = wallet.furniture?.[it.id] ?? 0;
             return (
               <button
                 key={it.id}
                 data-testid={`inventory-slot-${i + 1}`}
                 onClick={() => selectSlot(i)}
-                title={it.name}
+                title={`${it.name} (x${count})`}
                 className={`w-11 h-11 sm:w-14 sm:h-14 shrink-0 rounded-2xl flex flex-col items-center justify-center relative transition-all ${
                   active
                     ? "bg-[#FFE67D] border-[3px] border-[#5C4033] shadow-[0_4px_0_#5C4033] -translate-y-1.5 scale-110"
                     : "bg-[#FAF0E4] border-[3px] border-[#5C4033]/30 hover:border-[#5C4033] hover:scale-105"
-                }`}
+                } ${count <= 0 ? "opacity-45" : ""}`}
               >
                 <Icon className="w-5 h-5 sm:w-6 sm:h-6" style={{ color: it.color }} strokeWidth={2.5} />
-                <span className="absolute -top-2 -right-1.5 bg-[#5C4033] text-[#FFFBF4] text-[9px] font-extrabold font-['Fredoka'] w-4 h-4 flex items-center justify-center rounded-full border border-[#FFFBF4]">
-                  {i + 1}
+                <span className={`absolute -top-2 -right-1.5 text-[9px] font-extrabold font-['Fredoka'] min-w-4 h-4 px-1 flex items-center justify-center rounded-full border border-[#FFFBF4] ${count > 0 ? "bg-[#4CAF50] text-[#FFFBF4]" : "bg-[#C47B6E] text-[#FFFBF4]"}`} data-testid={`slot-count-${it.id}`}>
+                  {count}
                 </span>
               </button>
             );
@@ -868,13 +870,12 @@ export default function IslandGame({ code, player, onLeave }) {
                     <p className="text-xs font-bold uppercase tracking-wider text-[#7C5A3E] mb-2">Today's Furniture <span className="text-[#C9A33A]">🔄</span></p>
                     <div className="grid grid-cols-2 gap-2">
                       {[0, 1].map((i) => SHOP_ITEMS[(Math.floor(Date.now() / (8 * 60 * 1000)) + i) % SHOP_ITEMS.length]).map((s) => {
-                        const owned = (wallet.unlocked || []).includes(s.id);
+                        const owned = wallet.furniture?.[s.id] || 0;
                         const Icon = s.icon;
                         return (
                           <div key={s.id} className="flex items-center justify-between bg-[#FAF0E4] border-2 border-[#5C4033]/15 rounded-2xl p-2.5">
-                            <span className="flex items-center gap-2 font-bold text-[#3D271D] text-sm"><Icon className="w-4 h-4" style={{ color: s.color }} />{s.name}</span>
-                            {owned ? <span className="text-xs font-bold text-[#4CAF50] bg-[#DDF5D6] px-2 py-1 rounded-full">Owned</span> :
-                              <button data-testid={`buy-furniture-${s.id}`} onClick={() => buyFurniture(s.id)} disabled={wallet.bells < s.price} className="bg-[#9ED89D] text-[#1E431B] font-bold text-xs px-2.5 py-1.5 rounded-full border-2 border-[#3A8037] disabled:opacity-40 flex items-center gap-1"><Coins className="w-3 h-3" />{s.price}</button>}
+                            <span className="flex items-center gap-2 font-bold text-[#3D271D] text-sm"><Icon className="w-4 h-4" style={{ color: s.color }} />{s.name}{owned > 0 && <span className="text-xs text-[#7C5A3E]">x{owned}</span>}</span>
+                            <button data-testid={`buy-furniture-${s.id}`} onClick={() => buyFurniture(s.id)} disabled={wallet.bells < s.price} className="bg-[#9ED89D] text-[#1E431B] font-bold text-xs px-2.5 py-1.5 rounded-full border-2 border-[#3A8037] disabled:opacity-40 flex items-center gap-1"><Coins className="w-3 h-3" />{s.price}</button>
                           </div>
                         );
                       })}
