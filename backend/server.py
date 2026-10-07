@@ -23,6 +23,19 @@ app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
 SPAWN = {"x": 1000, "y": 750}
+HOUSE_SPAWN = {"x": 450, "y": 480}
+
+
+async def fetch_zone_items(code, zone):
+    if zone == "island":
+        q = {"code": code, "$or": [{"zone": "island"}, {"zone": {"$exists": False}}, {"zone": None}]}
+    else:
+        q = {"code": code, "zone": zone}
+    return await db.items.find(q, {"_id": 0}).to_list(3000)
+
+
+async def fetch_houses(code):
+    return await db.houses.find({"code": code}, {"_id": 0}).to_list(100)
 
 
 def now_iso():
@@ -84,9 +97,24 @@ class RoomHub:
     def players_public(self, code):
         return [c["player"] for c in self.rooms.get(code, {}).values()]
 
+    def players_in_zone(self, code, zone):
+        return [c["player"] for c in self.rooms.get(code, {}).values()
+                if c["player"].get("zone", "island") == zone]
+
     async def broadcast(self, code, message, exclude=None):
         for pid, conn in list(self.rooms.get(code, {}).items()):
             if pid == exclude:
+                continue
+            try:
+                await conn["ws"].send_json(message)
+            except Exception:
+                pass
+
+    async def broadcast_zone(self, code, zone, message, exclude=None):
+        for pid, conn in list(self.rooms.get(code, {}).items()):
+            if pid == exclude:
+                continue
+            if conn["player"].get("zone", "island") != zone:
                 continue
             try:
                 await conn["ws"].send_json(message)
@@ -118,22 +146,68 @@ async def ws_endpoint(websocket: WebSocket, code: str):
                     "x": SPAWN["x"],
                     "y": SPAWN["y"],
                     "dir": "down",
+                    "zone": "island",
                 }
                 self_room = self_ensure(code)
                 self_room[player_id] = {"ws": websocket, "player": player}
                 # send init state to joiner
-                items = await db.items.find({"code": code}, {"_id": 0}).to_list(2000)
+                items = await fetch_zone_items(code, "island")
+                houses = await fetch_houses(code)
                 chat = await db.chat.find({"code": code}, {"_id": 0}).sort("ts", -1).to_list(50)
                 chat.reverse()
                 await websocket.send_json({
                     "type": "init",
                     "you": player,
-                    "players": hub.players_public(code),
+                    "players": hub.players_in_zone(code, "island"),
                     "items": items,
+                    "houses": houses,
                     "chat": chat,
                 })
-                await hub.broadcast(code, {"type": "player_join", "player": player}, exclude=player_id)
-                await hub.broadcast(code, {"type": "players", "players": hub.players_public(code)})
+                await hub.broadcast_zone(code, "island", {"type": "player_join", "player": player}, exclude=player_id)
+                await hub.broadcast_zone(code, "island", {"type": "players", "players": hub.players_in_zone(code, "island")})
+
+            elif mtype == "enter_zone" and player_id:
+                conn = hub.rooms.get(code, {}).get(player_id)
+                if conn:
+                    old_zone = conn["player"].get("zone", "island")
+                    new_zone = data.get("zone", "island")
+                    await hub.broadcast_zone(code, old_zone, {"type": "player_leave", "id": player_id}, exclude=player_id)
+                    spawn = SPAWN if new_zone == "island" else HOUSE_SPAWN
+                    conn["player"]["zone"] = new_zone
+                    conn["player"]["x"] = spawn["x"]
+                    conn["player"]["y"] = spawn["y"]
+                    conn["player"]["dir"] = "down"
+                    items = await fetch_zone_items(code, new_zone)
+                    houses = await fetch_houses(code) if new_zone == "island" else []
+                    await websocket.send_json({
+                        "type": "zone_state",
+                        "zone": new_zone,
+                        "you": {"x": spawn["x"], "y": spawn["y"], "dir": "down"},
+                        "players": hub.players_in_zone(code, new_zone),
+                        "items": items,
+                        "houses": houses,
+                    })
+                    await hub.broadcast_zone(code, new_zone, {"type": "player_join", "player": conn["player"]}, exclude=player_id)
+                    await hub.broadcast_zone(code, new_zone, {"type": "players", "players": hub.players_in_zone(code, new_zone)}, exclude=player_id)
+                    await hub.broadcast_zone(code, old_zone, {"type": "players", "players": hub.players_in_zone(code, old_zone)})
+
+            elif mtype == "build_house" and player_id:
+                conn = hub.rooms.get(code, {}).get(player_id)
+                if conn and conn["player"].get("zone") == "island":
+                    existing = await db.houses.find_one({"code": code, "owner_id": player_id})
+                    if not existing:
+                        house = {
+                            "code": code,
+                            "owner_id": player_id,
+                            "owner_name": conn["player"]["name"],
+                            "color": conn["player"]["color"],
+                            "x": conn["player"]["x"],
+                            "y": conn["player"]["y"] + 10,
+                        }
+                        await db.houses.insert_one(dict(house))
+                        house.pop("_id", None)
+                        public = {k: v for k, v in house.items() if k != "code"}
+                        await hub.broadcast_zone(code, "island", {"type": "house", "house": public})
 
             elif mtype == "move" and player_id:
                 conn = hub.rooms.get(code, {}).get(player_id)
@@ -141,7 +215,7 @@ async def ws_endpoint(websocket: WebSocket, code: str):
                     conn["player"]["x"] = data.get("x", conn["player"]["x"])
                     conn["player"]["y"] = data.get("y", conn["player"]["y"])
                     conn["player"]["dir"] = data.get("dir", conn["player"]["dir"])
-                    await hub.broadcast(code, {
+                    await hub.broadcast_zone(code, conn["player"].get("zone", "island"), {
                         "type": "move",
                         "id": player_id,
                         "x": conn["player"]["x"],
@@ -165,6 +239,8 @@ async def ws_endpoint(websocket: WebSocket, code: str):
                     await hub.broadcast(code, {"type": "chat", "message": {k: v for k, v in msg.items() if k != "code"}})
 
             elif mtype == "place" and player_id:
+                conn = hub.rooms.get(code, {}).get(player_id)
+                zone = conn["player"].get("zone", "island") if conn else "island"
                 item = PlacedItem(
                     type=data.get("itemType", "flower"),
                     x=float(data.get("x", SPAWN["x"])),
@@ -174,21 +250,26 @@ async def ws_endpoint(websocket: WebSocket, code: str):
                 )
                 doc = item.model_dump()
                 doc["code"] = code
+                doc["zone"] = zone
                 await db.items.insert_one(dict(doc))
                 doc.pop("_id", None)
                 public = {k: v for k, v in doc.items() if k != "code"}
-                await hub.broadcast(code, {"type": "place", "item": public})
+                await hub.broadcast_zone(code, zone, {"type": "place", "item": public})
 
             elif mtype == "pickup" and player_id:
+                conn = hub.rooms.get(code, {}).get(player_id)
+                zone = conn["player"].get("zone", "island") if conn else "island"
                 item_id = data.get("itemId")
                 if item_id:
                     await db.items.delete_one({"code": code, "id": item_id})
-                    await hub.broadcast(code, {"type": "pickup", "itemId": item_id})
+                    await hub.broadcast_zone(code, zone, {"type": "pickup", "itemId": item_id})
 
             elif mtype == "emote" and player_id:
+                conn = hub.rooms.get(code, {}).get(player_id)
+                zone = conn["player"].get("zone", "island") if conn else "island"
                 emote = (data.get("emote") or "")[:4]
                 if emote:
-                    await hub.broadcast(code, {"type": "emote", "id": player_id, "emote": emote})
+                    await hub.broadcast_zone(code, zone, {"type": "emote", "id": player_id, "emote": emote})
 
     except WebSocketDisconnect:
         pass
@@ -196,9 +277,10 @@ async def ws_endpoint(websocket: WebSocket, code: str):
         logging.getLogger(__name__).warning(f"ws error: {e}")
     finally:
         if player_id and code in hub.rooms and player_id in hub.rooms[code]:
+            zone = hub.rooms[code][player_id]["player"].get("zone", "island")
             del hub.rooms[code][player_id]
-            await hub.broadcast(code, {"type": "player_leave", "id": player_id})
-            await hub.broadcast(code, {"type": "players", "players": hub.players_public(code)})
+            await hub.broadcast_zone(code, zone, {"type": "player_leave", "id": player_id})
+            await hub.broadcast_zone(code, zone, {"type": "players", "players": hub.players_in_zone(code, zone)})
             if not hub.rooms[code]:
                 del hub.rooms[code]
 

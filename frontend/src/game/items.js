@@ -24,5 +24,6 @@ export const ITEMS = [
 export const ITEM_BY_ID = Object.fromEntries(ITEMS.map((i) => [i.id, i]));
 
 export const WORLD = { w: 2000, h: 1500 };
+export const HOUSE_WORLD = { w: 900, h: 650 };
 export const SPEED = 3.2;
 export const PLAYER_R = 18;

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
-import { Copy, Users, LogOut, Send, MessageCircle, X, Hand, Smile } from "lucide-react";
+import { Copy, Users, LogOut, Send, MessageCircle, X, Hand, Smile, Home, DoorOpen, Hammer } from "lucide-react";
+import { ITEMS, ITEM_BY_ID, WORLD, HOUSE_WORLD, SPEED, PLAYER_R } from "@/game/items";
 
 const EMOTES = ["👋", "😂", "❤️", "😮", "😎", "🎉", "😢", "🌸"];
-import { ITEMS, ITEM_BY_ID, WORLD, SPEED, PLAYER_R } from "@/game/items";
+
 import { sfx } from "@/game/sound";
 
 const WS_BASE = process.env.REACT_APP_BACKEND_URL.replace(/^http/, "ws");
@@ -16,6 +17,9 @@ export default function IslandGame({ code, player, onLeave }) {
   const playersRef = useRef({}); // id -> player (others)
   const itemsRef = useRef([]); // placed items
   const emotesRef = useRef({}); // id -> { emote, until }
+  const housesRef = useRef([]);
+  const zoneRef = useRef("island");
+  const worldRef = useRef(WORLD);
   const keysRef = useRef({});
   const camRef = useRef({ x: 0, y: 0 });
   const lastSentRef = useRef(0);
@@ -28,6 +32,9 @@ export default function IslandGame({ code, player, onLeave }) {
   const [chatOpen, setChatOpen] = useState(true);
   const [showRoster, setShowRoster] = useState(false);
   const [emotePicker, setEmotePicker] = useState(false);
+  const [zone, setZone] = useState("island");
+  const [hasHouse, setHasHouse] = useState(false);
+  const [houseOwner, setHouseOwner] = useState(null);
   const [selectedSlot, setSelectedSlot] = useState(0);
   const selectedSlotRef = useRef(0);
   const chatInputRef = useRef(null);
@@ -51,6 +58,8 @@ export default function IslandGame({ code, player, onLeave }) {
         case "init": {
           meRef.current = { ...meRef.current, ...msg.you };
           itemsRef.current = msg.items || [];
+          housesRef.current = msg.houses || [];
+          setHasHouse((msg.houses || []).some((h) => h.owner_id === msg.you.id));
           setChat((msg.chat || []).map((m) => ({ ...m })));
           const others = {};
           (msg.players || []).forEach((p) => {
@@ -60,6 +69,26 @@ export default function IslandGame({ code, player, onLeave }) {
           setRoster([msg.you, ...Object.values(others)]);
           break;
         }
+        case "zone_state": {
+          zoneRef.current = msg.zone;
+          worldRef.current = msg.zone === "island" ? WORLD : HOUSE_WORLD;
+          setZone(msg.zone);
+          meRef.current = { ...meRef.current, ...msg.you };
+          itemsRef.current = msg.items || [];
+          housesRef.current = msg.houses || housesRef.current;
+          emotesRef.current = {};
+          const o2 = {};
+          (msg.players || []).forEach((p) => {
+            if (p.id !== meRef.current.id) o2[p.id] = p;
+          });
+          playersRef.current = o2;
+          setRoster([meRef.current, ...Object.values(o2)]);
+          break;
+        }
+        case "house":
+          housesRef.current = [...housesRef.current.filter((h) => h.owner_id !== msg.house.owner_id), msg.house];
+          if (msg.house.owner_id === meRef.current.id) setHasHouse(true);
+          break;
         case "players":
           setRoster(msg.players);
           msg.players.forEach((p) => {
@@ -187,6 +216,34 @@ export default function IslandGame({ code, player, onLeave }) {
     setEmotePicker(false);
   };
 
+  const buildHouse = () => {
+    send({ type: "build_house" });
+    sfx.place();
+    toast.success("Your house is built! 🏠 Walk up to it and tap Enter.");
+  };
+
+  const enterHouse = () => {
+    const me = meRef.current;
+    let nearest = null, best = 150 * 150;
+    for (const h of housesRef.current) {
+      const dx = h.x - me.x, dy = h.y - me.y, dsq = dx * dx + dy * dy;
+      if (dsq < best) { best = dsq; nearest = h; }
+    }
+    if (nearest) {
+      setHouseOwner(nearest.owner_name);
+      send({ type: "enter_zone", zone: `house:${nearest.owner_id}` });
+      sfx.pop();
+    } else {
+      toast("Walk closer to a house to go inside! 🚪");
+    }
+  };
+
+  const exitHouse = () => {
+    setHouseOwner(null);
+    send({ type: "enter_zone", zone: "island" });
+    sfx.pop();
+  };
+
   const copyCode = () => {
     navigator.clipboard?.writeText(code);
     sfx.pop();
@@ -215,8 +272,9 @@ export default function IslandGame({ code, player, onLeave }) {
       if (k.d || k.arrowright) dx += 1;
       if (dx || dy) {
         const len = Math.hypot(dx, dy) || 1;
-        me.x = Math.max(40, Math.min(WORLD.w - 40, me.x + (dx / len) * SPEED));
-        me.y = Math.max(40, Math.min(WORLD.h - 40, me.y + (dy / len) * SPEED));
+        const world = worldRef.current;
+        me.x = Math.max(40, Math.min(world.w - 40, me.x + (dx / len) * SPEED));
+        me.y = Math.max(40, Math.min(world.h - 40, me.y + (dy / len) * SPEED));
         me.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : dy > 0 ? "down" : "up";
         me.moving = true;
         if (t - lastSentRef.current > 60) {
@@ -229,14 +287,15 @@ export default function IslandGame({ code, player, onLeave }) {
 
       // camera
       const cam = camRef.current;
+      const world = worldRef.current;
       cam.x = me.x - canvas.width / 2;
       cam.y = me.y - canvas.height / 2;
-      cam.x = Math.max(0, Math.min(WORLD.w - canvas.width, cam.x));
-      cam.y = Math.max(0, Math.min(WORLD.h - canvas.height, cam.y));
-      if (WORLD.w < canvas.width) cam.x = (WORLD.w - canvas.width) / 2;
-      if (WORLD.h < canvas.height) cam.y = (WORLD.h - canvas.height) / 2;
+      cam.x = Math.max(0, Math.min(world.w - canvas.width, cam.x));
+      cam.y = Math.max(0, Math.min(world.h - canvas.height, cam.y));
+      if (world.w < canvas.width) cam.x = (world.w - canvas.width) / 2;
+      if (world.h < canvas.height) cam.y = (world.h - canvas.height) / 2;
 
-      render(ctx, canvas, cam, me, playersRef.current, itemsRef.current, emotesRef.current, t);
+      render(ctx, canvas, cam, me, playersRef.current, itemsRef.current, emotesRef.current, housesRef.current, zoneRef.current, t);
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
@@ -344,6 +403,34 @@ export default function IslandGame({ code, player, onLeave }) {
 
       {/* Placement controls */}
       <div className="absolute bottom-28 right-4 z-40 pointer-events-auto flex flex-col gap-2 items-end">
+        {zone === "island" ? (
+          <>
+            {!hasHouse && (
+              <button
+                data-testid="build-house-button"
+                onClick={buildHouse}
+                className="bg-[#FFB899] text-[#6B2E17] font-['Fredoka'] font-bold text-sm px-4 py-2.5 rounded-2xl border-[3px] border-[#D87F57] shadow-[0_4px_0_#D87F57] flex items-center gap-2 hover:brightness-105 active:translate-y-0.5 active:shadow-[0_1px_0_#D87F57] transition-all"
+              >
+                <Hammer className="w-4 h-4" /> Build House
+              </button>
+            )}
+            <button
+              data-testid="enter-house-button"
+              onClick={enterHouse}
+              className="bg-[#8ECEF1] text-[#0F4C66] font-['Fredoka'] font-bold text-sm px-4 py-2.5 rounded-2xl border-[3px] border-[#4FA3C9] shadow-[0_4px_0_#4FA3C9] flex items-center gap-2 hover:brightness-105 active:translate-y-0.5 active:shadow-[0_1px_0_#4FA3C9] transition-all"
+            >
+              <DoorOpen className="w-4 h-4" /> Enter House
+            </button>
+          </>
+        ) : (
+          <button
+            data-testid="exit-house-button"
+            onClick={exitHouse}
+            className="bg-[#8ECEF1] text-[#0F4C66] font-['Fredoka'] font-bold text-sm px-4 py-2.5 rounded-2xl border-[3px] border-[#4FA3C9] shadow-[0_4px_0_#4FA3C9] flex items-center gap-2 hover:brightness-105 active:translate-y-0.5 active:shadow-[0_1px_0_#4FA3C9] transition-all"
+          >
+            <LogOut className="w-4 h-4" /> Exit to Island
+          </button>
+        )}
         <AnimatePresence>
           {emotePicker && (
             <motion.div
@@ -460,18 +547,41 @@ export default function IslandGame({ code, player, onLeave }) {
       <div className="absolute top-20 left-4 z-30 pointer-events-none bg-[#FFFBF4]/85 border-2 border-[#5C4033]/20 rounded-2xl px-3 py-1.5 text-[11px] font-bold text-[#7C5A3E] font-['Fredoka']">
         WASD / Arrows to move · 1–8 items · E place · F pick up
       </div>
+
+      {/* Interior banner */}
+      {zone !== "island" && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none bg-[#FFF3DF] border-[3px] border-[#5C4033] rounded-full px-5 py-2 text-sm font-bold text-[#5C4033] font-['Fredoka'] shadow-[0_4px_0_#5C4033] flex items-center gap-2" data-testid="interior-banner">
+          <Home className="w-4 h-4" /> Inside {houseOwner ? `${houseOwner}'s` : "a"} House — decorate freely!
+        </div>
+      )}
     </div>
   );
 }
 
 // ---------- Rendering ----------
-function render(ctx, canvas, cam, me, others, items, emotes, t) {
+function render(ctx, canvas, cam, me, others, items, emotes, houses, zone, t) {
+  if (zone === "island") drawIsland(ctx, canvas, cam);
+  else drawInterior(ctx, canvas, cam);
+
+  if (zone === "island") {
+    const hs = [...houses].sort((a, b) => a.y - b.y);
+    for (const h of hs) drawHouse(ctx, h, cam, me.id);
+  }
+
+  // placed items (sorted by y for depth)
+  const sorted = [...items].sort((a, b) => a.y - b.y);
+  for (const it of sorted) drawItem(ctx, it, cam);
+
+  // players sorted by y with local player
+  const all = [...Object.values(others), me].sort((a, b) => a.y - b.y);
+  for (const p of all) drawPlayer(ctx, p, cam, p.id === me.id, t, emotes[p.id]);
+}
+
+function drawIsland(ctx, canvas, cam) {
   const W = canvas.width, H = canvas.height;
-  // grass base
   ctx.fillStyle = "#7BC676";
   ctx.fillRect(0, 0, W, H);
 
-  // grass checker texture
   const tile = 80;
   const startX = Math.floor(cam.x / tile) * tile;
   const startY = Math.floor(cam.y / tile) * tile;
@@ -484,16 +594,13 @@ function render(ctx, canvas, cam, me, others, items, emotes, t) {
     }
   }
 
-  // sandy island border
   ctx.strokeStyle = "#F4E2B8";
   ctx.lineWidth = 26;
   ctx.strokeRect(13 - cam.x, 13 - cam.y, WORLD.w - 26, WORLD.h - 26);
 
-  // decorative pond
   drawPond(ctx, 650 - cam.x, 520 - cam.y, 150, 100);
   drawPond(ctx, 1450 - cam.x, 1000 - cam.y, 120, 90);
 
-  // path
   ctx.strokeStyle = "#D9C29A";
   ctx.lineWidth = 46;
   ctx.lineCap = "round";
@@ -501,14 +608,80 @@ function render(ctx, canvas, cam, me, others, items, emotes, t) {
   ctx.moveTo(300 - cam.x, 300 - cam.y);
   ctx.quadraticCurveTo(1000 - cam.x, 750 - cam.y, 1700 - cam.x, 1200 - cam.y);
   ctx.stroke();
+}
 
-  // placed items (sorted by y for depth)
-  const sorted = [...items].sort((a, b) => a.y - b.y);
-  for (const it of sorted) drawItem(ctx, it, cam);
+function drawInterior(ctx, canvas, cam) {
+  const W = canvas.width, H = canvas.height;
+  // wallpaper
+  ctx.fillStyle = "#F3D9B5";
+  ctx.fillRect(0, 0, W, H);
+  const floorTop = 130 - cam.y;
+  // wall pattern
+  ctx.fillStyle = "rgba(255,255,255,0.25)";
+  for (let wx = 0; wx < HOUSE_WORLD.w; wx += 60) {
+    ctx.fillRect(wx - cam.x + 20, 0 - cam.y, 4, 130);
+  }
+  // floor
+  ctx.fillStyle = "#C8955B";
+  ctx.fillRect(0 - cam.x, floorTop, HOUSE_WORLD.w, HOUSE_WORLD.h - 130);
+  ctx.strokeStyle = "rgba(92,64,51,0.2)";
+  ctx.lineWidth = 2;
+  for (let py = 130; py < HOUSE_WORLD.h; py += 46) {
+    const yy = py - cam.y;
+    ctx.beginPath(); ctx.moveTo(0 - cam.x, yy); ctx.lineTo(HOUSE_WORLD.w - cam.x, yy); ctx.stroke();
+  }
+  // baseboard
+  ctx.fillStyle = "#A9744F";
+  ctx.fillRect(0 - cam.x, floorTop - 10, HOUSE_WORLD.w, 10);
+  // room outline
+  ctx.strokeStyle = "#5C4033";
+  ctx.lineWidth = 10;
+  ctx.strokeRect(5 - cam.x, 5 - cam.y, HOUSE_WORLD.w - 10, HOUSE_WORLD.h - 10);
+  // exit mat
+  const dx = HOUSE_WORLD.w / 2 - cam.x;
+  const dyy = HOUSE_WORLD.h - 34 - cam.y;
+  ctx.fillStyle = "#8B5A2B";
+  ctx.beginPath(); ctx.roundRect(dx - 44, dyy - 20, 88, 44, 8); ctx.fill();
+  ctx.strokeStyle = "#5C4033"; ctx.lineWidth = 3; ctx.stroke();
+  ctx.fillStyle = "#FFE67D"; ctx.font = "bold 13px Fredoka, sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("↓ EXIT", dx, dyy + 2);
+}
 
-  // players sorted by y with local player
-  const all = [...Object.values(others), me].sort((a, b) => a.y - b.y);
-  for (const p of all) drawPlayer(ctx, p, cam, p.id === me.id, t, emotes[p.id]);
+function drawHouse(ctx, h, cam, myId) {
+  const x = h.x - cam.x, y = h.y - cam.y;
+  const mine = h.owner_id === myId;
+  ctx.save();
+  // shadow
+  ctx.beginPath(); ctx.ellipse(x, y + 6, 70, 16, 0, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(0,0,0,0.12)"; ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = "#5C4033";
+  // body
+  ctx.fillStyle = "#FFF3DF";
+  ctx.beginPath(); ctx.roundRect(x - 58, y - 78, 116, 84, 8); ctx.fill(); ctx.stroke();
+  // roof
+  ctx.beginPath();
+  ctx.moveTo(x - 70, y - 72); ctx.lineTo(x, y - 126); ctx.lineTo(x + 70, y - 72); ctx.closePath();
+  ctx.fillStyle = mine ? (h.color || "#FF9AA2") : "#E07A5F"; ctx.fill(); ctx.stroke();
+  // door
+  ctx.fillStyle = "#8B5A2B";
+  ctx.beginPath(); ctx.roundRect(x - 16, y - 46, 32, 52, 4); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "#FFE67D";
+  ctx.beginPath(); ctx.arc(x + 9, y - 20, 2.5, 0, Math.PI * 2); ctx.fill();
+  // windows
+  ctx.fillStyle = "#AEE3F5";
+  [[-38, -50], [38, -50]].forEach(([a, b]) => {
+    ctx.beginPath(); ctx.roundRect(x + a - 11, y + b, 22, 22, 3); ctx.fill(); ctx.stroke();
+  });
+  // nameplate
+  ctx.font = "bold 13px Fredoka, sans-serif";
+  const label = `${h.owner_name}'s House`;
+  const w = ctx.measureText(label).width + 18;
+  ctx.fillStyle = mine ? "#FFE67D" : "#FFFBF4";
+  ctx.beginPath(); ctx.roundRect(x - w / 2, y - 150, w, 22, 11); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "#3D271D"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(label, x, y - 139);
+  ctx.restore();
 }
 
 function drawPond(ctx, x, y, rx, ry) {
