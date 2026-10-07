@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 7 (Museum/Cafe interior zones + Props + Build Road) tested end-to-end. Added new backend suite /app/backend/tests/test_museum_cafe_roads.py with 7 tests covering: enter_zone museum/cafe payload (zone/label/HOUSE_SPAWN/house=null/empty roads&crops&houses), shared-interior presence + zone-isolated items between island/museum/cafe, enter_zone island with explicit x,y spawn + 40..W-40 clamp, regression that house exit (no x,y + last_house) still spawns in front of house, place_road broadcast/dedup/persistence via init+zone_state(island), and place_road ignored in museum/cafe. All 7 new tests PASS, plus full regression (test_houses_zones.py 5/5, test_furniture_inventory.py 8/8, test_economy_farming.py 7/7, test_fishing.py 3/3, test_decor_rotation.py 13/13) = 43/43 PASS. Frontend E2E via Playwright confirmed: Build Road button toggles 'Build Road' <-> 'Paving… stop', walking in a held direction with road mode on paves tiles (visible brown road strip in subsequent screenshot). Walking into Museum building (world ~680,470) opens interior with banner 'Inside Museum — enjoy your visit!' and an Exit mat. Streetlamps glow at night, benches/bushes/flowerbeds render in town. Cafe interior entry uses identical proximity branch as museum (verified same code path + backend test for cafe label passes).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_museum_cafe_roads.py",
+    "/app/test_reports/pytest/iter7_results.xml",
+    "/app/test_reports/pytest/iter7_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "IslandGame.jsx is now 1470 lines — still growing; previously flagged. Splitting into renderer/UI/network modules would help maintainability.",
+    "server.py ws_endpoint is a very long if/elif chain (~370 lines). Consider dispatch table mapping mtype -> handler for readability as more message types are added.",
+    "place_road: rounds x,y to int and relies on unique index (code,x,y). Caller (frontend) centers to ROAD_GRID cells, which is good; however the backend does not enforce grid alignment itself. Minor risk if a future client sends arbitrary coords — would still work due to dedup, but could pollute roads collection. Low priority.",
+    "enter_zone island branch always clears last_house even when server used it for spawn — correct, prevents re-triggering on subsequent moves. Good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_museum_cafe_roads.py"
+  ],
+  "success_rate": {"backend": "100% (43/43)", "frontend": "100% core flows verified (road toggle text, paving visible, museum interior banner + exit mat, props/streetlamps rendering with night glow)"},
+  "test_credentials": "none required (name + room code join)",
+  "seed_data_creation": "Each test creates its own TEST_MuseumCafeRoads room via POST /api/rooms/create.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "WS zone strings: 'island','house:<ownerId>','museum','cafe'. enter_zone to island accepts optional x,y (clamped 40..1960, 40..1460); without x,y uses last_house to spawn in front of house, else SPAWN(1000,750). place_road handler is island-only, dedup via unique index on (code,x,y); roads returned in init.roads and zone_state(island).roads. New data-testids: road-button, interior-banner. Museum world coords (680,470); Cafe (1330,500); Shop (1000,430) which still opens shop-modal (not a zone)."
+}
