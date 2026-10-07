@@ -172,7 +172,27 @@ async def ws_endpoint(websocket: WebSocket, code: str):
                     old_zone = conn["player"].get("zone", "island")
                     new_zone = data.get("zone", "island")
                     await hub.broadcast_zone(code, old_zone, {"type": "player_leave", "id": player_id}, exclude=player_id)
-                    spawn = SPAWN if new_zone == "island" else HOUSE_SPAWN
+                    house_info = None
+                    if new_zone == "island":
+                        spawn = dict(SPAWN)
+                        lh = conn["player"].get("last_house")
+                        if lh:
+                            hdoc = await db.houses.find_one({"code": code, "owner_id": lh}, {"_id": 0})
+                            if hdoc:
+                                spawn = {"x": hdoc["x"], "y": hdoc["y"] + 70}
+                            conn["player"]["last_house"] = None
+                    else:
+                        spawn = dict(HOUSE_SPAWN)
+                        owner_id = new_zone.split("house:", 1)[-1]
+                        conn["player"]["last_house"] = owner_id
+                        hdoc = await db.houses.find_one({"code": code, "owner_id": owner_id}, {"_id": 0})
+                        if hdoc:
+                            house_info = {
+                                "owner_id": owner_id,
+                                "owner_name": hdoc.get("owner_name"),
+                                "floor": hdoc.get("floor", "wood"),
+                                "wall": hdoc.get("wall", "cream"),
+                            }
                     conn["player"]["zone"] = new_zone
                     conn["player"]["x"] = spawn["x"]
                     conn["player"]["y"] = spawn["y"]
@@ -186,10 +206,19 @@ async def ws_endpoint(websocket: WebSocket, code: str):
                         "players": hub.players_in_zone(code, new_zone),
                         "items": items,
                         "houses": houses,
+                        "house": house_info,
                     })
                     await hub.broadcast_zone(code, new_zone, {"type": "player_join", "player": conn["player"]}, exclude=player_id)
                     await hub.broadcast_zone(code, new_zone, {"type": "players", "players": hub.players_in_zone(code, new_zone)}, exclude=player_id)
                     await hub.broadcast_zone(code, old_zone, {"type": "players", "players": hub.players_in_zone(code, old_zone)})
+
+            elif mtype == "set_decor" and player_id:
+                conn = hub.rooms.get(code, {}).get(player_id)
+                if conn and conn["player"].get("zone") == f"house:{player_id}":
+                    floor = (data.get("floor") or "wood")[:16]
+                    wall = (data.get("wall") or "cream")[:16]
+                    await db.houses.update_one({"code": code, "owner_id": player_id}, {"$set": {"floor": floor, "wall": wall}})
+                    await hub.broadcast_zone(code, f"house:{player_id}", {"type": "decor", "floor": floor, "wall": wall})
 
             elif mtype == "build_house" and player_id:
                 conn = hub.rooms.get(code, {}).get(player_id)
@@ -202,7 +231,9 @@ async def ws_endpoint(websocket: WebSocket, code: str):
                             "owner_name": conn["player"]["name"],
                             "color": conn["player"]["color"],
                             "x": conn["player"]["x"],
-                            "y": conn["player"]["y"] + 10,
+                            "y": conn["player"]["y"] - 40,
+                            "floor": "wood",
+                            "wall": "cream",
                         }
                         await db.houses.insert_one(dict(house))
                         house.pop("_id", None)

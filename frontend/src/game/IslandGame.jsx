@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
-import { Copy, Users, LogOut, Send, MessageCircle, X, Hand, Smile, Home, DoorOpen, Hammer } from "lucide-react";
-import { ITEMS, ITEM_BY_ID, WORLD, HOUSE_WORLD, SPEED, PLAYER_R } from "@/game/items";
+import { Copy, Users, LogOut, Send, MessageCircle, X, Hand, Smile, Home, DoorOpen, Hammer, RotateCw, Paintbrush } from "lucide-react";
+import { ITEMS, ITEM_BY_ID, WORLD, HOUSE_WORLD, SPEED, PLAYER_R, FLOORS, WALLS } from "@/game/items";
 
 const EMOTES = ["👋", "😂", "❤️", "😮", "😎", "🎉", "😢", "🌸"];
 
@@ -20,6 +20,9 @@ export default function IslandGame({ code, player, onLeave }) {
   const housesRef = useRef([]);
   const zoneRef = useRef("island");
   const worldRef = useRef(WORLD);
+  const rotationRef = useRef(0);
+  const transitionLockRef = useRef(0);
+  const decorRef = useRef({ floor: "wood", wall: "cream" });
   const keysRef = useRef({});
   const camRef = useRef({ x: 0, y: 0 });
   const lastSentRef = useRef(0);
@@ -35,6 +38,10 @@ export default function IslandGame({ code, player, onLeave }) {
   const [zone, setZone] = useState("island");
   const [hasHouse, setHasHouse] = useState(false);
   const [houseOwner, setHouseOwner] = useState(null);
+  const [rotationDeg, setRotationDeg] = useState(0);
+  const [ownerHouse, setOwnerHouse] = useState(false);
+  const [decor, setDecor] = useState({ floor: "wood", wall: "cream" });
+  const [decorPanel, setDecorPanel] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState(0);
   const selectedSlotRef = useRef(0);
   const chatInputRef = useRef(null);
@@ -77,6 +84,16 @@ export default function IslandGame({ code, player, onLeave }) {
           itemsRef.current = msg.items || [];
           housesRef.current = msg.houses || housesRef.current;
           emotesRef.current = {};
+          if (msg.house) {
+            decorRef.current = { floor: msg.house.floor || "wood", wall: msg.house.wall || "cream" };
+            setDecor(decorRef.current);
+            setHouseOwner(msg.house.owner_name || null);
+            setOwnerHouse(msg.house.owner_id === meRef.current.id);
+          } else {
+            setHouseOwner(null);
+            setOwnerHouse(false);
+            setDecorPanel(false);
+          }
           const o2 = {};
           (msg.players || []).forEach((p) => {
             if (p.id !== meRef.current.id) o2[p.id] = p;
@@ -88,6 +105,10 @@ export default function IslandGame({ code, player, onLeave }) {
         case "house":
           housesRef.current = [...housesRef.current.filter((h) => h.owner_id !== msg.house.owner_id), msg.house];
           if (msg.house.owner_id === meRef.current.id) setHasHouse(true);
+          break;
+        case "decor":
+          decorRef.current = { floor: msg.floor, wall: msg.wall };
+          setDecor(decorRef.current);
           break;
         case "players":
           setRoster(msg.players);
@@ -156,6 +177,7 @@ export default function IslandGame({ code, player, onLeave }) {
       if (k >= "1" && k <= "8") selectSlot(parseInt(k, 10) - 1);
       if (k === "e") placeItem();
       if (k === "f") pickupItem();
+      if (k === "r") rotateItem();
       if (k === "escape") setShowRoster(false);
     };
     const up = (e) => { keysRef.current[e.key.toLowerCase()] = false; };
@@ -187,7 +209,7 @@ export default function IslandGame({ code, player, onLeave }) {
     const x = me.x + (d === "left" ? -off : d === "right" ? off : 0);
     const y = me.y + (d === "up" ? -off : d === "down" ? off : 0);
     const itemType = ITEMS[selectedSlotRef.current].id;
-    send({ type: "place", itemType, x, y });
+    send({ type: "place", itemType, x, y, rotation: rotationRef.current });
     sfx.place();
   };
 
@@ -244,6 +266,27 @@ export default function IslandGame({ code, player, onLeave }) {
     sfx.pop();
   };
 
+  const rotateItem = () => {
+    const r = (rotationRef.current + 90) % 360;
+    rotationRef.current = r;
+    setRotationDeg(r);
+    sfx.click();
+  };
+
+  const setFloor = (f) => {
+    const d = { ...decorRef.current, floor: f };
+    decorRef.current = d; setDecor(d);
+    send({ type: "set_decor", floor: d.floor, wall: d.wall });
+    sfx.click();
+  };
+
+  const setWall = (w) => {
+    const d = { ...decorRef.current, wall: w };
+    decorRef.current = d; setDecor(d);
+    send({ type: "set_decor", floor: d.floor, wall: d.wall });
+    sfx.click();
+  };
+
   const copyCode = () => {
     navigator.clipboard?.writeText(code);
     sfx.pop();
@@ -285,6 +328,27 @@ export default function IslandGame({ code, player, onLeave }) {
         me.moving = false;
       }
 
+      // door walk-through
+      if (t - transitionLockRef.current > 1400) {
+        if (zoneRef.current === "island") {
+          for (const h of housesRef.current) {
+            if (Math.abs(me.x - h.x) < 26 && me.y > h.y - 58 && me.y < h.y + 14) {
+              transitionLockRef.current = t;
+              send({ type: "enter_zone", zone: `house:${h.owner_id}` });
+              sfx.pop();
+              break;
+            }
+          }
+        } else {
+          const ex = HOUSE_WORLD.w / 2, ey = HOUSE_WORLD.h - 34;
+          if (Math.abs(me.x - ex) < 46 && Math.abs(me.y - ey) < 34) {
+            transitionLockRef.current = t;
+            send({ type: "enter_zone", zone: "island" });
+            sfx.pop();
+          }
+        }
+      }
+
       // camera
       const cam = camRef.current;
       const world = worldRef.current;
@@ -295,7 +359,7 @@ export default function IslandGame({ code, player, onLeave }) {
       if (world.w < canvas.width) cam.x = (world.w - canvas.width) / 2;
       if (world.h < canvas.height) cam.y = (world.h - canvas.height) / 2;
 
-      render(ctx, canvas, cam, me, playersRef.current, itemsRef.current, emotesRef.current, housesRef.current, zoneRef.current, t);
+      render(ctx, canvas, cam, me, playersRef.current, itemsRef.current, emotesRef.current, housesRef.current, zoneRef.current, decorRef.current, t);
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
@@ -423,13 +487,64 @@ export default function IslandGame({ code, player, onLeave }) {
             </button>
           </>
         ) : (
-          <button
-            data-testid="exit-house-button"
-            onClick={exitHouse}
-            className="bg-[#8ECEF1] text-[#0F4C66] font-['Fredoka'] font-bold text-sm px-4 py-2.5 rounded-2xl border-[3px] border-[#4FA3C9] shadow-[0_4px_0_#4FA3C9] flex items-center gap-2 hover:brightness-105 active:translate-y-0.5 active:shadow-[0_1px_0_#4FA3C9] transition-all"
-          >
-            <LogOut className="w-4 h-4" /> Exit to Island
-          </button>
+          <>
+            {ownerHouse && (
+              <AnimatePresence>
+                {decorPanel && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                    className="bg-[#FFFBF4] border-[3px] border-[#5C4033] rounded-3xl p-3 shadow-[0_6px_0_rgba(92,64,51,0.2)] w-56"
+                    data-testid="decor-panel"
+                  >
+                    <p className="text-xs font-bold uppercase tracking-wider text-[#7C5A3E] mb-1.5">Floor</p>
+                    <div className="grid grid-cols-4 gap-1.5 mb-3">
+                      {Object.entries(FLOORS).map(([key, f]) => (
+                        <button
+                          key={key}
+                          data-testid={`floor-${key}`}
+                          onClick={() => setFloor(key)}
+                          title={f.name}
+                          className={`h-10 rounded-xl border-[3px] transition-all ${decor.floor === key ? "border-[#5C4033] scale-105 shadow-[0_3px_0_#5C4033]" : "border-[#5C4033]/25 hover:scale-105"}`}
+                          style={{ background: f.base }}
+                        />
+                      ))}
+                    </div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-[#7C5A3E] mb-1.5">Wall</p>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {Object.entries(WALLS).map(([key, w]) => (
+                        <button
+                          key={key}
+                          data-testid={`wall-${key}`}
+                          onClick={() => setWall(key)}
+                          title={w.name}
+                          className={`h-10 rounded-xl border-[3px] transition-all ${decor.wall === key ? "border-[#5C4033] scale-105 shadow-[0_3px_0_#5C4033]" : "border-[#5C4033]/25 hover:scale-105"}`}
+                          style={{ background: w.base }}
+                        />
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            )}
+            {ownerHouse && (
+              <button
+                data-testid="decorate-button"
+                onClick={() => { setDecorPanel((v) => !v); sfx.click(); }}
+                className="bg-[#D3B6ED] text-[#4A2E6B] font-['Fredoka'] font-bold text-sm px-4 py-2.5 rounded-2xl border-[3px] border-[#A97FD6] shadow-[0_4px_0_#A97FD6] flex items-center gap-2 hover:brightness-105 active:translate-y-0.5 active:shadow-[0_1px_0_#A97FD6] transition-all"
+              >
+                <Paintbrush className="w-4 h-4" /> Decorate
+              </button>
+            )}
+            <button
+              data-testid="exit-house-button"
+              onClick={exitHouse}
+              className="bg-[#8ECEF1] text-[#0F4C66] font-['Fredoka'] font-bold text-sm px-4 py-2.5 rounded-2xl border-[3px] border-[#4FA3C9] shadow-[0_4px_0_#4FA3C9] flex items-center gap-2 hover:brightness-105 active:translate-y-0.5 active:shadow-[0_1px_0_#4FA3C9] transition-all"
+            >
+              <LogOut className="w-4 h-4" /> Exit to Island
+            </button>
+          </>
         )}
         <AnimatePresence>
           {emotePicker && (
@@ -461,6 +576,13 @@ export default function IslandGame({ code, player, onLeave }) {
           <Smile className="w-4 h-4" /> Emote
         </button>
         <button
+          data-testid="rotate-button"
+          onClick={rotateItem}
+          className="bg-[#FFE0C2] text-[#7A4A1E] font-['Fredoka'] font-bold text-sm px-4 py-2.5 rounded-2xl border-[3px] border-[#D9A066] shadow-[0_4px_0_#D9A066] flex items-center gap-2 hover:brightness-105 active:translate-y-0.5 active:shadow-[0_1px_0_#D9A066] transition-all"
+        >
+          <RotateCw className="w-4 h-4" /> Rotate <span className="text-xs opacity-80">{rotationDeg}°</span>
+        </button>
+        <button
           data-testid="place-button"
           onClick={placeItem}
           className="bg-[#9ED89D] text-[#1E431B] font-['Fredoka'] font-bold text-sm px-4 py-2.5 rounded-2xl border-[3px] border-[#3A8037] shadow-[0_4px_0_#3A8037] flex items-center gap-2 hover:bg-[#B0E8AF] active:translate-y-0.5 active:shadow-[0_1px_0_#3A8037] transition-all"
@@ -477,8 +599,8 @@ export default function IslandGame({ code, player, onLeave }) {
       </div>
 
       {/* Inventory toolbar */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 pointer-events-auto">
-        <div className="bg-[#FFFBF4] border-4 border-[#5C4033] p-2 rounded-[28px] shadow-[0_8px_0_rgba(92,64,51,0.2)] flex items-center gap-1.5 sm:gap-2" data-testid="inventory-toolbar">
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 pointer-events-auto max-w-[94vw]">
+        <div className="bg-[#FFFBF4] border-4 border-[#5C4033] p-2 rounded-[28px] shadow-[0_8px_0_rgba(92,64,51,0.2)] flex items-center gap-1.5 sm:gap-2 overflow-x-auto custom-scrollbar" data-testid="inventory-toolbar">
           {ITEMS.map((it, i) => {
             const Icon = it.icon;
             const active = selectedSlot === i;
@@ -488,7 +610,7 @@ export default function IslandGame({ code, player, onLeave }) {
                 data-testid={`inventory-slot-${i + 1}`}
                 onClick={() => selectSlot(i)}
                 title={it.name}
-                className={`w-11 h-11 sm:w-14 sm:h-14 rounded-2xl flex flex-col items-center justify-center relative transition-all ${
+                className={`w-11 h-11 sm:w-14 sm:h-14 shrink-0 rounded-2xl flex flex-col items-center justify-center relative transition-all ${
                   active
                     ? "bg-[#FFE67D] border-[3px] border-[#5C4033] shadow-[0_4px_0_#5C4033] -translate-y-1.5 scale-110"
                     : "bg-[#FAF0E4] border-[3px] border-[#5C4033]/30 hover:border-[#5C4033] hover:scale-105"
@@ -545,7 +667,7 @@ export default function IslandGame({ code, player, onLeave }) {
 
       {/* Controls hint */}
       <div className="absolute top-20 left-4 z-30 pointer-events-none bg-[#FFFBF4]/85 border-2 border-[#5C4033]/20 rounded-2xl px-3 py-1.5 text-[11px] font-bold text-[#7C5A3E] font-['Fredoka']">
-        WASD / Arrows to move · 1–8 items · E place · F pick up
+        WASD / Arrows to move · 1–8 items · E place · R rotate · F pick up · walk into doors
       </div>
 
       {/* Interior banner */}
@@ -559,9 +681,9 @@ export default function IslandGame({ code, player, onLeave }) {
 }
 
 // ---------- Rendering ----------
-function render(ctx, canvas, cam, me, others, items, emotes, houses, zone, t) {
+function render(ctx, canvas, cam, me, others, items, emotes, houses, zone, decor, t) {
   if (zone === "island") drawIsland(ctx, canvas, cam);
-  else drawInterior(ctx, canvas, cam);
+  else drawInterior(ctx, canvas, cam, decor);
 
   if (zone === "island") {
     const hs = [...houses].sort((a, b) => a.y - b.y);
@@ -610,10 +732,12 @@ function drawIsland(ctx, canvas, cam) {
   ctx.stroke();
 }
 
-function drawInterior(ctx, canvas, cam) {
+function drawInterior(ctx, canvas, cam, decor) {
+  const floor = FLOORS[decor?.floor] || FLOORS.wood;
+  const wall = WALLS[decor?.wall] || WALLS.cream;
   const W = canvas.width, H = canvas.height;
   // wallpaper
-  ctx.fillStyle = "#F3D9B5";
+  ctx.fillStyle = wall.base;
   ctx.fillRect(0, 0, W, H);
   const floorTop = 130 - cam.y;
   // wall pattern
@@ -622,9 +746,9 @@ function drawInterior(ctx, canvas, cam) {
     ctx.fillRect(wx - cam.x + 20, 0 - cam.y, 4, 130);
   }
   // floor
-  ctx.fillStyle = "#C8955B";
+  ctx.fillStyle = floor.base;
   ctx.fillRect(0 - cam.x, floorTop, HOUSE_WORLD.w, HOUSE_WORLD.h - 130);
-  ctx.strokeStyle = "rgba(92,64,51,0.2)";
+  ctx.strokeStyle = floor.line;
   ctx.lineWidth = 2;
   for (let py = 130; py < HOUSE_WORLD.h; py += 46) {
     const yy = py - cam.y;
@@ -712,6 +836,7 @@ function drawItem(ctx, it, cam) {
   ctx.fillStyle = "rgba(0,0,0,0.12)";
   ctx.fill();
   ctx.translate(x, y);
+  if (it.rotation) ctx.rotate((it.rotation * Math.PI) / 180);
   ctx.lineWidth = 2.5;
   ctx.strokeStyle = "#5C4033";
 
@@ -762,6 +887,33 @@ function drawItem(ctx, it, cam) {
       ctx.fillStyle = color; rr(-18, -2, 36, 8, 3); ctx.fill(); ctx.stroke();
       rr(-18, -16, 36, 6, 3); ctx.fill(); ctx.stroke();
       rr(-16, 6, 5, 12, 2); ctx.fill(); ctx.stroke(); rr(11, 6, 5, 12, 2); ctx.fill(); ctx.stroke();
+      break;
+    case "bed":
+      ctx.fillStyle = "#8B5A2B"; rr(-20, -22, 40, 46, 5); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = color; rr(-17, -19, 34, 30, 4); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#FFFBF4"; rr(-17, 10, 34, 11, 4); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#FFFBF4"; rr(-14, -16, 28, 12, 3); ctx.fill(); ctx.stroke();
+      break;
+    case "rug":
+      ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, 0, 14, 0, Math.PI * 2); ctx.fillStyle = "#FFFBF4"; ctx.fill();
+      ctx.beginPath(); ctx.arc(0, 0, 7, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill();
+      break;
+    case "bookshelf":
+      ctx.fillStyle = color; rr(-18, -26, 36, 50, 3); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = "#5C4033"; ctx.lineWidth = 2;
+      [-14, 0, 14].forEach((sy) => { ctx.beginPath(); ctx.moveTo(-18, sy); ctx.lineTo(18, sy); ctx.stroke(); });
+      ["#E07A5F", "#8ECEF1", "#FFE67D", "#9ED89D"].forEach((bc, i) => {
+        ctx.fillStyle = bc; ctx.fillRect(-15 + i * 8, -24, 6, 10);
+        ctx.fillStyle = ["#9ED89D", "#FFB899"][i % 2]; ctx.fillRect(-15 + i * 8, 2, 6, 10);
+      });
+      break;
+    case "plant":
+      ctx.fillStyle = "#C97B4A"; rr(-10, 8, 20, 16, 3); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = color;
+      [[-8, -2], [8, -4], [0, -16], [-5, -12], [6, -12]].forEach(([a, b]) => {
+        ctx.beginPath(); ctx.ellipse(a, b, 6, 10, a * 0.05, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      });
       break;
     default:
       ctx.fillStyle = color; ctx.beginPath(); ctx.arc(0, 0, 14, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
