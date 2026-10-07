@@ -69,8 +69,21 @@ export const PONDS = [
 
 export const TOWN = [
   { id: "shop", name: "Nook Shop", x: 1000, y: 430, color: "#FFE67D", enter: "shop" },
-  { id: "museum", name: "Museum", x: 680, y: 470, color: "#C7CEEA", enter: "soon" },
-  { id: "cafe", name: "Cafe", x: 1330, y: 500, color: "#FFB899", enter: "soon" },
+  { id: "museum", name: "Museum", x: 680, y: 470, color: "#C7CEEA", enter: "museum" },
+  { id: "cafe", name: "Cafe", x: 1330, y: 500, color: "#FFB899", enter: "cafe" },
+];
+
+export const ROAD_GRID = 44;
+
+export const PROPS = [
+  { type: "lamp", x: 912, y: 560 }, { type: "lamp", x: 1088, y: 560 },
+  { type: "lamp", x: 912, y: 860 }, { type: "lamp", x: 1088, y: 860 },
+  { type: "lamp", x: 560, y: 560 }, { type: "lamp", x: 1440, y: 560 },
+  { type: "lamp", x: 300, y: 660 }, { type: "lamp", x: 1700, y: 660 },
+  { type: "bench", x: 1000, y: 690 }, { type: "bench", x: 1000, y: 880 },
+  { type: "bush", x: 840, y: 560 }, { type: "bush", x: 1160, y: 560 },
+  { type: "flowerbed", x: 800, y: 700 }, { type: "flowerbed", x: 1200, y: 700 },
+  { type: "flowerbed", x: 1000, y: 1180 }, { type: "bush", x: 500, y: 740 },
 ];
 
 export const SCENERY = [

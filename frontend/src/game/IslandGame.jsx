@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
-import { Copy, Users, LogOut, Send, MessageCircle, X, Hand, Smile, Home, DoorOpen, Hammer, RotateCw, Paintbrush, ShoppingBag, Coins, Sprout, Sun, Moon, Sunrise, Sunset, Fish } from "lucide-react";
-import { ITEMS, SHOP_ITEMS, CROPS, PONDS, TOWN, SCENERY, ITEM_BY_ID, WORLD, HOUSE_WORLD, SPEED, PLAYER_R, FLOORS, WALLS } from "@/game/items";
+import { Copy, Users, LogOut, Send, MessageCircle, X, Hand, Smile, Home, DoorOpen, Hammer, RotateCw, Paintbrush, ShoppingBag, Coins, Sprout, Sun, Moon, Sunrise, Sunset, Fish, Route } from "lucide-react";
+import { ITEMS, SHOP_ITEMS, CROPS, PONDS, TOWN, SCENERY, PROPS, ROAD_GRID, ITEM_BY_ID, WORLD, HOUSE_WORLD, SPEED, PLAYER_R, FLOORS, WALLS } from "@/game/items";
 
 const EMOTES = ["👋", "😂", "❤️", "😮", "😎", "🎉", "😢", "🌸"];
 
@@ -27,6 +27,10 @@ export default function IslandGame({ code, player, onLeave }) {
   const walletRef = useRef({ bells: 0, seeds: {}, crops: {}, furniture: {} });
   const nearBuildingRef = useRef(null);
   const nearWaterRef = useRef(false);
+  const roadsRef = useRef([]);
+  const roadModeRef = useRef(false);
+  const lastRoadCellRef = useRef(null);
+  const returnPosRef = useRef(null);
   const keysRef = useRef({});
   const camRef = useRef({ x: 0, y: 0 });
   const lastSentRef = useRef(0);
@@ -51,6 +55,8 @@ export default function IslandGame({ code, player, onLeave }) {
   const [shopTab, setShopTab] = useState("buy");
   const [seedPicker, setSeedPicker] = useState(false);
   const [nearWater, setNearWater] = useState(false);
+  const [roadMode, setRoadMode] = useState(false);
+  const [zoneLabel, setZoneLabel] = useState(null);
   const [clock, setClock] = useState(() => phaseLabel(skyPhase()));
   const [selectedSlot, setSelectedSlot] = useState(0);
   const selectedSlotRef = useRef(0);
@@ -77,6 +83,7 @@ export default function IslandGame({ code, player, onLeave }) {
           itemsRef.current = msg.items || [];
           housesRef.current = msg.houses || [];
           cropsRef.current = msg.crops || [];
+          roadsRef.current = msg.roads || [];
           if (msg.wallet) {
             walletRef.current = { bells: msg.wallet.bells, seeds: msg.wallet.seeds || {}, crops: msg.wallet.crops || {}, furniture: msg.wallet.furniture || {} };
             setWallet(walletRef.current);
@@ -99,6 +106,8 @@ export default function IslandGame({ code, player, onLeave }) {
           itemsRef.current = msg.items || [];
           housesRef.current = msg.houses || housesRef.current;
           cropsRef.current = msg.zone === "island" ? (msg.crops || []) : [];
+          roadsRef.current = msg.zone === "island" ? (msg.roads || []) : [];
+          setZoneLabel(msg.label || null);
           emotesRef.current = {};
           if (msg.house) {
             decorRef.current = { floor: msg.house.floor || "wood", wall: msg.house.wall || "cream" };
@@ -139,6 +148,9 @@ export default function IslandGame({ code, player, onLeave }) {
           break;
         case "harvest":
           cropsRef.current = cropsRef.current.filter((c) => c.id !== msg.cropId);
+          break;
+        case "road":
+          roadsRef.current = [...roadsRef.current, msg.road];
           break;
         case "players":
           setRoster(msg.players);
@@ -363,6 +375,13 @@ export default function IslandGame({ code, player, onLeave }) {
     sfx.pop();
   };
 
+  const toggleRoad = () => {
+    const v = !roadMode;
+    setRoadMode(v); roadModeRef.current = v; lastRoadCellRef.current = null;
+    sfx.click();
+    toast(v ? "Road mode on — walk to pave a path! 🧱" : "Road mode off");
+  };
+
   const copyCode = () => {
     navigator.clipboard?.writeText(code);
     sfx.pop();
@@ -419,7 +438,9 @@ export default function IslandGame({ code, player, onLeave }) {
           const ex = HOUSE_WORLD.w / 2, ey = HOUSE_WORLD.h - 34;
           if (Math.abs(me.x - ex) < 46 && Math.abs(me.y - ey) < 34) {
             transitionLockRef.current = t;
-            send({ type: "enter_zone", zone: "island" });
+            const rp = returnPosRef.current;
+            send({ type: "enter_zone", zone: "island", ...(rp || {}) });
+            returnPosRef.current = null;
             sfx.pop();
           }
         }
@@ -434,12 +455,26 @@ export default function IslandGame({ code, player, onLeave }) {
         if (nb && nearBuildingRef.current !== nb.id) {
           nearBuildingRef.current = nb.id;
           if (nb.enter === "shop") { setShopOpen(true); sfx.pop(); }
-          else toast(`The ${nb.name} is coming soon! ✨`);
+          else if (t - transitionLockRef.current > 1400) {
+            transitionLockRef.current = t;
+            returnPosRef.current = { x: nb.x, y: nb.y + 70 };
+            send({ type: "enter_zone", zone: nb.enter });
+            sfx.pop();
+          }
         } else if (!nb) {
           nearBuildingRef.current = null;
         }
         const nw = PONDS.some((p) => ((me.x - p.x) ** 2) / ((p.rx + 60) ** 2) + ((me.y - p.y) ** 2) / ((p.ry + 60) ** 2) <= 1);
         if (nw !== nearWaterRef.current) { nearWaterRef.current = nw; setNearWater(nw); }
+        if (roadModeRef.current) {
+          const cx = Math.floor(me.x / ROAD_GRID) * ROAD_GRID + ROAD_GRID / 2;
+          const cy = Math.floor(me.y / ROAD_GRID) * ROAD_GRID + ROAD_GRID / 2;
+          const key = `${cx},${cy}`;
+          if (key !== lastRoadCellRef.current) {
+            lastRoadCellRef.current = key;
+            if (!roadsRef.current.some((r) => r.x === cx && r.y === cy)) send({ type: "place_road", x: cx, y: cy });
+          }
+        }
       }
 
       // camera
@@ -452,7 +487,7 @@ export default function IslandGame({ code, player, onLeave }) {
       if (world.w < canvas.width) cam.x = (world.w - canvas.width) / 2;
       if (world.h < canvas.height) cam.y = (world.h - canvas.height) / 2;
 
-      render(ctx, canvas, cam, me, playersRef.current, itemsRef.current, emotesRef.current, housesRef.current, zoneRef.current, decorRef.current, cropsRef.current, t);
+      render(ctx, canvas, cam, me, playersRef.current, itemsRef.current, emotesRef.current, housesRef.current, zoneRef.current, decorRef.current, cropsRef.current, roadsRef.current, t);
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
@@ -823,6 +858,13 @@ export default function IslandGame({ code, player, onLeave }) {
           >
             <Fish className="w-4 h-4" /> {nearWater ? "Cast Line!" : "Fish"}
           </button>
+          <button
+            data-testid="road-button"
+            onClick={toggleRoad}
+            className={`font-['Fredoka'] font-bold text-sm px-4 py-2.5 rounded-2xl border-[3px] flex items-center gap-2 active:translate-y-0.5 transition-all ${roadMode ? "bg-[#C9A77F] text-[#3D271D] border-[#8A6A4A] shadow-[0_4px_0_#8A6A4A]" : "bg-[#EADBC8] text-[#6B533B] border-[#B89B78] shadow-[0_4px_0_#B89B78]"}`}
+          >
+            <Route className="w-4 h-4" /> {roadMode ? "Paving… stop" : "Build Road"}
+          </button>
         </div>
       )}
 
@@ -902,7 +944,7 @@ export default function IslandGame({ code, player, onLeave }) {
       </AnimatePresence>
       {zone !== "island" && (
         <div className="absolute top-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none bg-[#FFF3DF] border-[3px] border-[#5C4033] rounded-full px-5 py-2 text-sm font-bold text-[#5C4033] font-['Fredoka'] shadow-[0_4px_0_#5C4033] flex items-center gap-2" data-testid="interior-banner">
-          <Home className="w-4 h-4" /> Inside {houseOwner ? `${houseOwner}'s` : "a"} House — decorate freely!
+          <Home className="w-4 h-4" /> Inside {zoneLabel || "a room"} — {ownerHouse ? "decorate freely!" : "enjoy your visit!"}
         </div>
       )}
     </div>
@@ -910,9 +952,9 @@ export default function IslandGame({ code, player, onLeave }) {
 }
 
 // ---------- Rendering ----------
-function render(ctx, canvas, cam, me, others, items, emotes, houses, zone, decor, crops, t) {
-  if (zone === "island") drawIsland(ctx, canvas, cam);
-  else drawInterior(ctx, canvas, cam, decor);
+function render(ctx, canvas, cam, me, others, items, emotes, houses, zone, decor, crops, roads, t) {
+  if (zone === "island") drawIsland(ctx, canvas, cam, roads);
+  else drawInterior(ctx, canvas, cam, decor, zone);
 
   if (zone === "island") {
     const hs = [...houses].sort((a, b) => a.y - b.y);
@@ -928,10 +970,10 @@ function render(ctx, canvas, cam, me, others, items, emotes, houses, zone, decor
   const all = [...Object.values(others), me].sort((a, b) => a.y - b.y);
   for (const p of all) drawPlayer(ctx, p, cam, p.id === me.id, t, emotes[p.id]);
 
-  if (zone === "island") drawSky(ctx, canvas, t);
+  if (zone === "island") drawSky(ctx, canvas, cam, t);
 }
 
-function drawIsland(ctx, canvas, cam) {
+function drawIsland(ctx, canvas, cam, roads) {
   const W = canvas.width, H = canvas.height;
   ctx.fillStyle = "#7BC676";
   ctx.fillRect(0, 0, W, H);
@@ -945,6 +987,8 @@ function drawIsland(ctx, canvas, cam) {
   ctx.strokeStyle = "#F4E2B8";
   ctx.lineWidth = 26;
   ctx.strokeRect(13 - cam.x, 13 - cam.y, WORLD.w - 26, WORLD.h - 26);
+
+  for (const r of (roads || [])) drawRoadTile(ctx, r, cam);
 
   // roads
   ctx.strokeStyle = "#D9C29A"; ctx.lineCap = "round";
@@ -960,6 +1004,7 @@ function drawIsland(ctx, canvas, cam) {
 
   for (const p of PONDS) drawPond(ctx, p.x - cam.x, p.y - cam.y, p.rx, p.ry);
   for (const s of SCENERY) drawTreeAt(ctx, s.x - cam.x, s.y - cam.y, s.s || 1);
+  for (const pr of PROPS) drawProp(ctx, pr, cam);
   for (const b of TOWN) drawTownBuilding(ctx, b, cam);
 }
 
@@ -997,12 +1042,66 @@ function drawTownBuilding(ctx, b, cam) {
   ctx.restore();
 }
 
-function drawInterior(ctx, canvas, cam, decor) {
-  const floor = FLOORS[decor?.floor] || FLOORS.wood;
-  const wall = WALLS[decor?.wall] || WALLS.cream;
+function drawRoadTile(ctx, r, cam) {
+  const x = r.x - cam.x, y = r.y - cam.y;
+  ctx.fillStyle = "#CDB48C";
+  ctx.beginPath(); ctx.roundRect(x - 22, y - 22, 44, 44, 6); ctx.fill();
+  ctx.strokeStyle = "rgba(160,130,90,0.5)"; ctx.lineWidth = 1.5; ctx.stroke();
+}
+
+function drawProp(ctx, p, cam) {
+  const x = p.x - cam.x, y = p.y - cam.y;
+  ctx.save();
+  ctx.lineWidth = 2.5; ctx.strokeStyle = "#5C4033";
+  if (p.type === "lamp") {
+    ctx.beginPath(); ctx.ellipse(x, y + 6, 10, 4, 0, 0, Math.PI * 2); ctx.fillStyle = "rgba(0,0,0,0.12)"; ctx.fill();
+    ctx.fillStyle = "#5B4A3A"; ctx.beginPath(); ctx.roundRect(x - 3, y - 36, 6, 42, 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y - 38, 8, 0, Math.PI * 2); ctx.fillStyle = "#FFE67D"; ctx.fill(); ctx.stroke();
+  } else if (p.type === "bench") {
+    ctx.beginPath(); ctx.ellipse(x, y + 8, 22, 5, 0, 0, Math.PI * 2); ctx.fillStyle = "rgba(0,0,0,0.12)"; ctx.fill();
+    ctx.fillStyle = "#B88A5E"; ctx.beginPath(); ctx.roundRect(x - 20, y - 2, 40, 8, 3); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(x - 20, y - 16, 40, 6, 3); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(x - 18, y + 6, 5, 12, 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(x + 13, y + 6, 5, 12, 2); ctx.fill(); ctx.stroke();
+  } else if (p.type === "bush") {
+    ctx.beginPath(); ctx.ellipse(x, y + 8, 18, 6, 0, 0, Math.PI * 2); ctx.fillStyle = "rgba(0,0,0,0.1)"; ctx.fill();
+    ctx.fillStyle = "#5BB85C";
+    [[-10, 0], [10, 0], [0, -6]].forEach(([a, b]) => { ctx.beginPath(); ctx.arc(x + a, y + b, 12, 0, Math.PI * 2); ctx.fill(); });
+  } else if (p.type === "flowerbed") {
+    ctx.fillStyle = "#8B5A2B"; ctx.beginPath(); ctx.roundRect(x - 18, y - 8, 36, 18, 4); ctx.fill(); ctx.stroke();
+    const cols = ["#FF8FA3", "#FFE67D", "#C7A7F0", "#FF9A6B"];
+    for (let i = 0; i < 6; i++) { ctx.fillStyle = cols[i % cols.length]; ctx.beginPath(); ctx.arc(x - 13 + i * 5, y - 2 + (i % 2) * 5, 3, 0, Math.PI * 2); ctx.fill(); }
+  }
+  ctx.restore();
+}
+
+function drawMuseumProps(ctx, cam) {
+  const plinths = [[200, 240], [360, 240], [520, 240], [680, 240]];
+  const fossils = ["#E8E0D0", "#D8CBB0", "#CFE3EC", "#E6D2B8"];
+  plinths.forEach(([px, py], i) => {
+    const x = px - cam.x, y = py - cam.y;
+    ctx.fillStyle = "#AFA89C"; ctx.beginPath(); ctx.roundRect(x - 20, y - 6, 40, 34, 4); ctx.fill();
+    ctx.strokeStyle = "#5C4033"; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = fossils[i]; ctx.beginPath(); ctx.arc(x, y - 16, 14, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  });
+}
+
+function drawCafeProps(ctx, cam) {
+  const x = 450 - cam.x, y = 250 - cam.y;
+  ctx.fillStyle = "#8B5A2B"; ctx.beginPath(); ctx.roundRect(x - 150, y - 20, 300, 34, 6); ctx.fill();
+  ctx.strokeStyle = "#5C4033"; ctx.lineWidth = 2.5; ctx.stroke();
+  ctx.fillStyle = "#5C4033";
+  for (let i = -120; i <= 120; i += 60) { ctx.beginPath(); ctx.arc(x + i, y + 44, 10, 0, Math.PI * 2); ctx.fill(); }
+}
+
+function drawInterior(ctx, canvas, cam, decor, zone) {
+  let floor, wallBase;
+  if (zone === "museum") { floor = { base: "#CBC6BE", line: "rgba(70,70,90,0.22)" }; wallBase = "#C3D0EA"; }
+  else if (zone === "cafe") { floor = FLOORS.wood; wallBase = "#F1D2A9"; }
+  else { floor = FLOORS[decor?.floor] || FLOORS.wood; wallBase = (WALLS[decor?.wall] || WALLS.cream).base; }
   const W = canvas.width, H = canvas.height;
   // wallpaper
-  ctx.fillStyle = wall.base;
+  ctx.fillStyle = wallBase;
   ctx.fillRect(0, 0, W, H);
   const floorTop = 130 - cam.y;
   // wall pattern
@@ -1035,6 +1134,8 @@ function drawInterior(ctx, canvas, cam, decor) {
   ctx.fillStyle = "#FFE67D"; ctx.font = "bold 13px Fredoka, sans-serif";
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillText("↓ EXIT", dx, dyy + 2);
+  if (zone === "museum") drawMuseumProps(ctx, cam);
+  if (zone === "cafe") drawCafeProps(ctx, cam);
 }
 
 function drawHouse(ctx, h, cam, myId) {
@@ -1336,7 +1437,7 @@ function getStars(w, h) {
   }
   return STARS;
 }
-function drawSky(ctx, canvas, t) {
+function drawSky(ctx, canvas, cam, t) {
   const { c, a } = lerpSky(skyPhase());
   ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${a})`;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1352,6 +1453,17 @@ function drawSky(ctx, canvas, t) {
     ctx.globalAlpha = night;
     ctx.fillStyle = "#FDF6D0";
     ctx.beginPath(); ctx.arc(canvas.width - 90, 90, 26, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "lighter";
+    for (const p of PROPS) {
+      if (p.type !== "lamp") continue;
+      const lx = p.x - cam.x, ly = p.y - cam.y - 38;
+      const g = ctx.createRadialGradient(lx, ly, 2, lx, ly, 48);
+      g.addColorStop(0, `rgba(255,230,140,${0.55 * night})`);
+      g.addColorStop(1, "rgba(255,230,140,0)");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(lx, ly, 48, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalCompositeOperation = "source-over";
     ctx.restore();
   }
 }

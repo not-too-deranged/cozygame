@@ -24,6 +24,8 @@ api_router = APIRouter(prefix="/api")
 
 SPAWN = {"x": 1000, "y": 750}
 HOUSE_SPAWN = {"x": 450, "y": 480}
+WORLD_W = 2000
+WORLD_H = 1500
 
 
 async def fetch_zone_items(code, zone):
@@ -89,6 +91,11 @@ def wallet_payload(doc):
 
 async def fetch_crops(code):
     return await db.crops.find({"code": code}, {"_id": 0}).to_list(2000)
+
+
+async def fetch_roads(code):
+    docs = await db.roads.find({"code": code}, {"_id": 0}).to_list(5000)
+    return [{"id": d["id"], "x": d["x"], "y": d["y"]} for d in docs]
 
 
 def now_iso():
@@ -207,6 +214,7 @@ async def ws_endpoint(websocket: WebSocket, code: str):
                 items = await fetch_zone_items(code, "island")
                 houses = await fetch_houses(code)
                 crops = await fetch_crops(code)
+                roads = await fetch_roads(code)
                 state = await get_state(code, player_id, player["name"])
                 chat = await db.chat.find({"code": code}, {"_id": 0}).sort("ts", -1).to_list(50)
                 chat.reverse()
@@ -217,6 +225,7 @@ async def ws_endpoint(websocket: WebSocket, code: str):
                     "items": items,
                     "houses": houses,
                     "crops": crops,
+                    "roads": roads,
                     "wallet": wallet_payload(state),
                     "chat": chat,
                 })
@@ -230,26 +239,36 @@ async def ws_endpoint(websocket: WebSocket, code: str):
                     new_zone = data.get("zone", "island")
                     await hub.broadcast_zone(code, old_zone, {"type": "player_leave", "id": player_id}, exclude=player_id)
                     house_info = None
+                    label = None
                     if new_zone == "island":
-                        spawn = dict(SPAWN)
-                        lh = conn["player"].get("last_house")
-                        if lh:
-                            hdoc = await db.houses.find_one({"code": code, "owner_id": lh}, {"_id": 0})
-                            if hdoc:
-                                spawn = {"x": hdoc["x"], "y": hdoc["y"] + 70}
-                            conn["player"]["last_house"] = None
+                        if data.get("x") is not None and data.get("y") is not None:
+                            spawn = {"x": max(40, min(WORLD_W - 40, float(data["x"]))), "y": max(40, min(WORLD_H - 40, float(data["y"])))}
+                        else:
+                            spawn = dict(SPAWN)
+                            lh = conn["player"].get("last_house")
+                            if lh:
+                                hdoc = await db.houses.find_one({"code": code, "owner_id": lh}, {"_id": 0})
+                                if hdoc:
+                                    spawn = {"x": hdoc["x"], "y": hdoc["y"] + 70}
+                        conn["player"]["last_house"] = None
                     else:
                         spawn = dict(HOUSE_SPAWN)
-                        owner_id = new_zone.split("house:", 1)[-1]
-                        conn["player"]["last_house"] = owner_id
-                        hdoc = await db.houses.find_one({"code": code, "owner_id": owner_id}, {"_id": 0})
-                        if hdoc:
-                            house_info = {
-                                "owner_id": owner_id,
-                                "owner_name": hdoc.get("owner_name"),
-                                "floor": hdoc.get("floor", "wood"),
-                                "wall": hdoc.get("wall", "cream"),
-                            }
+                        if new_zone.startswith("house:"):
+                            owner_id = new_zone.split("house:", 1)[1]
+                            conn["player"]["last_house"] = owner_id
+                            hdoc = await db.houses.find_one({"code": code, "owner_id": owner_id}, {"_id": 0})
+                            if hdoc:
+                                house_info = {
+                                    "owner_id": owner_id,
+                                    "owner_name": hdoc.get("owner_name"),
+                                    "floor": hdoc.get("floor", "wood"),
+                                    "wall": hdoc.get("wall", "cream"),
+                                }
+                                label = f"{hdoc.get('owner_name')}'s House"
+                        elif new_zone == "museum":
+                            label = "Museum"
+                        elif new_zone == "cafe":
+                            label = "Cafe"
                     conn["player"]["zone"] = new_zone
                     conn["player"]["x"] = spawn["x"]
                     conn["player"]["y"] = spawn["y"]
@@ -257,14 +276,17 @@ async def ws_endpoint(websocket: WebSocket, code: str):
                     items = await fetch_zone_items(code, new_zone)
                     houses = await fetch_houses(code) if new_zone == "island" else []
                     crops = await fetch_crops(code) if new_zone == "island" else []
+                    roads = await fetch_roads(code) if new_zone == "island" else []
                     await websocket.send_json({
                         "type": "zone_state",
                         "zone": new_zone,
+                        "label": label,
                         "you": {"x": spawn["x"], "y": spawn["y"], "dir": "down"},
                         "players": hub.players_in_zone(code, new_zone),
                         "items": items,
                         "houses": houses,
                         "crops": crops,
+                        "roads": roads,
                         "house": house_info,
                     })
                     await hub.broadcast_zone(code, new_zone, {"type": "player_join", "player": conn["player"]}, exclude=player_id)
@@ -479,6 +501,17 @@ async def ws_endpoint(websocket: WebSocket, code: str):
                     payload["caught_value"] = catch["value"]
                     await websocket.send_json(payload)
 
+            elif mtype == "place_road" and player_id:
+                conn = hub.rooms.get(code, {}).get(player_id)
+                if conn and conn["player"].get("zone") == "island":
+                    rx = round(float(data.get("x", 0)))
+                    ry = round(float(data.get("y", 0)))
+                    exists = await db.roads.find_one({"code": code, "x": rx, "y": ry})
+                    if not exists:
+                        road = {"code": code, "id": str(uuid.uuid4()), "x": rx, "y": ry}
+                        await db.roads.insert_one(dict(road))
+                        await hub.broadcast_zone(code, "island", {"type": "road", "road": {"id": road["id"], "x": rx, "y": ry}})
+
     except WebSocketDisconnect:
         pass
     except Exception as e:
@@ -521,6 +554,7 @@ async def ensure_indexes():
         await db.items.create_index([("code", 1), ("zone", 1)])
         await db.crops.create_index([("code", 1)])
         await db.houses.create_index([("code", 1), ("owner_id", 1)], unique=True)
+        await db.roads.create_index([("code", 1), ("x", 1), ("y", 1)], unique=True)
     except Exception as e:
         logging.getLogger(__name__).warning(f"index setup: {e}")
 
