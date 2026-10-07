@@ -23,7 +23,12 @@
 - Placed items persist in DB and sync to all players.
 - Room code badge (copy), player roster modal, connection status, leave.
 - Player emotes: 8-reaction picker, floating bubble above avatar, zone-scoped broadcast.
-- Houses & interiors (zones): Build House on island (one per player, nameplate), Enter/visit any house, decorate interior with furniture. Items/presence/movement are zone-isolated (island vs house:<ownerId>). Interiors persist and are visible to fresh joiners. All verified by testing agent (iteration_2, 100%).
+- Houses & interiors (zones): Build House on island (one per player, nameplate), Enter/visit any house, decorate interior with furniture. Items/presence/movement are zone-isolated (island vs house:<ownerId>). Interiors persist and are visible to fresh joiners.
+- Floor & Wallpaper decor: owner-only per-house floor (wood/pink/mint/stone) + wall (cream/mint/blue/lavender), persisted and synced to visitors in that house (server-side allowlisted).
+- Furniture rotation: R key / Rotate button cycles 0/90/180/270 (server-normalized), applied on placement and persisted.
+- More furniture: 12 total items (added Bed, Rug, Bookshelf, Potted Plant); toolbar scrolls.
+- Door walk-through: walk into a house door to enter; walk onto the interior EXIT mat to leave; exiting spawns you just in front of your house. Enter/Exit buttons also remain.
+- All verified by testing agent iterations 2 & 3 (100%; 18 backend tests green).
 
 ## Backlog (P1/P2)
 - P1: Furniture rotation (R key), collision, item ownership/lock rules.

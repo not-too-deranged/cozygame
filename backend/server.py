@@ -215,8 +215,8 @@ async def ws_endpoint(websocket: WebSocket, code: str):
             elif mtype == "set_decor" and player_id:
                 conn = hub.rooms.get(code, {}).get(player_id)
                 if conn and conn["player"].get("zone") == f"house:{player_id}":
-                    floor = (data.get("floor") or "wood")[:16]
-                    wall = (data.get("wall") or "cream")[:16]
+                    floor = data.get("floor") if data.get("floor") in {"wood", "pink", "mint", "stone"} else "wood"
+                    wall = data.get("wall") if data.get("wall") in {"cream", "mint", "blue", "lavender"} else "cream"
                     await db.houses.update_one({"code": code, "owner_id": player_id}, {"$set": {"floor": floor, "wall": wall}})
                     await hub.broadcast_zone(code, f"house:{player_id}", {"type": "decor", "floor": floor, "wall": wall})
 
@@ -272,11 +272,15 @@ async def ws_endpoint(websocket: WebSocket, code: str):
             elif mtype == "place" and player_id:
                 conn = hub.rooms.get(code, {}).get(player_id)
                 zone = conn["player"].get("zone", "island") if conn else "island"
+                try:
+                    rot = (round(int(data.get("rotation", 0) or 0) / 90) * 90) % 360
+                except (ValueError, TypeError):
+                    rot = 0
                 item = PlacedItem(
                     type=data.get("itemType", "flower"),
                     x=float(data.get("x", SPAWN["x"])),
                     y=float(data.get("y", SPAWN["y"])),
-                    rotation=int(data.get("rotation", 0)),
+                    rotation=rot,
                     placed_by=player_id,
                 )
                 doc = item.model_dump()
