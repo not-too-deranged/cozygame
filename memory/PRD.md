@@ -23,6 +23,7 @@
 - Day/Night cycle: shared 8-min sky cycle on the island (morning→midday→sunset→dusk→night) with stars + moon; HUD clock badge.
 - Startup Mongo indexes (unique player_state & houses, room code) to prevent duplicate wallets/houses.
 - All verified by testing agent iteration_4 (100%; 25/25 backend tests green).
+- Town & exploration (iter 5): island redesigned as a small town — roads, 3 buildings (Nook Shop enterable by walking in; Museum & Cafe "coming soon"), 3 ponds, scattered trees. Faster movement (SPEED 4.3). Fishing at pond edges (Fish/Cast Line button) credits bells (Carp/Sea Bass/Red Snapper/Golden Trout/Old Boot). Shop opens by walking into the building (top-bar button removed); shop furniture stock rotates daily. Verified iteration_5 (100%; 28/28 backend tests).
 
 ## Backlog (P1/P2)
 - P1: Furniture rotation (R key), collision, item ownership/lock rules.
