@@ -22,12 +22,15 @@
 - Inventory of 8 furniture items; place (E) in facing direction, pick up (F) nearest.
 - Placed items persist in DB and sync to all players.
 - Room code badge (copy), player roster modal, connection status, leave.
+- Player emotes: 8-reaction picker, floating bubble above avatar, zone-scoped broadcast.
+- Houses & interiors (zones): Build House on island (one per player, nameplate), Enter/visit any house, decorate interior with furniture. Items/presence/movement are zone-isolated (island vs house:<ownerId>). Interiors persist and are visible to fresh joiners. All verified by testing agent (iteration_2, 100%).
 
 ## Backlog (P1/P2)
-- P1: Furniture rotation (R key), collision, item ownership rules.
-- P1: Player customization (hats/outfits), emotes/reactions.
+- P1: Furniture rotation (R key), collision, item ownership/lock rules.
+- P1: Player customization (hats/outfits), more furniture types & floor/wallpaper choices.
 - P2: Day/night cycle, fishing/bug catching mini-games, museum.
-- P2: Per-player inventory economy (currency, shop).
+- P2: Per-player inventory economy (currency, shop). House spoofing hardening if ever non-MVP.
+- Tech debt: IslandGame.jsx ~835 lines — consider splitting rendering/game-loop module.
 
 ## Next Tasks
 - Gather feedback after first multiplayer session with friends.

@@ -1,0 +1,28 @@
+{
+  "summary": "Backend (5/5 pytest) and frontend E2E for houses+zones all pass. Verified build_house idempotency, zone_state payloads for island/house:<ownerId>, item zone isolation (house vs island, and across different houses), zone-scoped presence (player_leave + filtered players on zone switch), zone-scoped movement (A's island move not delivered to B in house; C in same house delivers to B), persistence across reconnect (new WS client sees previously placed interior items and the house via init/zone_state), and GET /api/rooms/{code}. Frontend: Alice create room -> Build House (button disappears, nameplate 'Alice's House' visible) -> Enter House shows interior-banner \"Inside Alice's House\" with Exit button; selected inventory slot + place-button (and E key) persisted interior items; Exit returns to island with the house still visible and build button hidden. Two-browser scenario: Bob (second context, same code) clicked Enter House and successfully entered Alice's house (banner shows Alice); both remained Live.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_houses_zones.py",
+    "/app/backend/tests/pytest.ini",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py enter_zone: when a player enters a new zone, the updated 'players' list for the NEW zone is broadcast with exclude=player_id, which means the entering client itself doesn't get a top-level 'players' event (relies on zone_state.players). Works correctly as-is, but worth noting if roster drift is seen in future.",
+    "server.py build_house: owner_id is derived from player's ws join id — relying on client-supplied player.id. Not a bug given no-auth model, but a malicious client could spoof. Acceptable for cozy MVP.",
+    "server.py: no cap on items/houses per room; db.items.find uses to_list(2000/3000). Fine for 3-friend scope.",
+    "IslandGame.jsx is 835 lines (above 700 threshold). Consider splitting rendering/game-loop into separate module."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_houses_zones.py",
+    "/app/backend/tests/pytest.ini"
+  ],
+  "success_rate": {"backend": "100% (5/5)", "frontend": "100%"},
+  "test_credentials": "No auth. Join by name + room code.",
+  "seed_data_creation": "Each pytest creates its own fresh room via POST /api/rooms/create (name 'TEST_House'). No cleanup implemented (acceptable for MVP, rooms persist in Mongo).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend regression suite at /app/backend/tests/test_houses_zones.py covers all house+zone behaviours. Run with: pytest /app/backend/tests/ -v. iteration_1 covered base island (chat/place/pickup/emotes). WS protocol: {type:join|enter_zone|build_house|move|place|pickup|chat|emote}; zone strings 'island' or 'house:<ownerId>'. WORLD 2000x1500, HOUSE_WORLD 900x650, HOUSE_SPAWN {450,480}, SPAWN {1000,750}."
+}
