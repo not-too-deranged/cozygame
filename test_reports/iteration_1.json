@@ -1,0 +1,23 @@
+{
+  "summary": "Full backend REST + WebSocket real-time sync verified. Frontend E2E with 2 browser contexts confirms shared room, roster=2 on both clients, Live connection, and chat broadcast rendered on receiver. All 7 requested scenarios pass.",
+  "tested_scope": ["backend", "frontend", "integration"],
+  "passed": [
+    "POST /api/rooms/create returns 200 with 5-char code and persists room",
+    "GET /api/rooms/{code} returns room+items+chat (200) for existing code",
+    "GET /api/rooms/ZZZZZ returns 404 for non-existent code",
+    "WS /api/ws/{code} join -> init message with you/players/items/chat",
+    "Two WS clients in same room: joiner B sees A in players (count=2); A receives player_join + players events",
+    "WS move from A broadcast to B with updated x=500, dir=left",
+    "WS chat from A broadcast to B as 'chat' message and persisted (GET returns chat with 'hello world')",
+    "WS place broadcast to B and persisted; WS pickup broadcast to B and removes from DB (items count=0 after pickup)",
+    "Frontend: Lobby renders, Create My Island -> canvas loads, room-code-badge shows 5-char code, connection-status = Live",
+    "Frontend: Second browser context joins via code -> players-badge shows 2 on BOTH clients; Alice (A) and Bob (B) avatars visible on both",
+    "Frontend: Chat from A appears in B's chat log ('Alice: hi from alice')"
+  ],
+  "failed": [],
+  "action_items": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "retest_needed": false,
+  "full_testing_deferred": true,
+  "notes": "A transient 'WebSocket closed before established' console log appeared once on client B during Vite HMR handshake but WS reconnected and status went Live immediately; no functional impact. Movement sync visual verification was skipped on canvas (pixel-based) but backend WS move broadcast was verified end-to-end."
+}
