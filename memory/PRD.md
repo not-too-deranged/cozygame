@@ -16,19 +16,13 @@
 - **Persistence**: `rooms`, `items` (placed furniture), `chat` collections. Player live positions are in-memory per room hub.
 
 ## Implemented (2026-10-07)
-- Lobby: name, avatar color picker, create/join tabs, room code validation.
-- Real-time shared world: players see each other move, join/leave toasts, name tags.
-- Island chat (persisted, last 50 loaded on join).
-- Inventory of 8 furniture items; place (E) in facing direction, pick up (F) nearest.
-- Placed items persist in DB and sync to all players.
-- Room code badge (copy), player roster modal, connection status, leave.
-- Player emotes: 8-reaction picker, floating bubble above avatar, zone-scoped broadcast.
-- Houses & interiors (zones): Build House on island (one per player, nameplate), Enter/visit any house, decorate interior with furniture. Items/presence/movement are zone-isolated (island vs house:<ownerId>). Interiors persist and are visible to fresh joiners.
-- Floor & Wallpaper decor: owner-only per-house floor (wood/pink/mint/stone) + wall (cream/mint/blue/lavender), persisted and synced to visitors in that house (server-side allowlisted).
-- Furniture rotation: R key / Rotate button cycles 0/90/180/270 (server-normalized), applied on placement and persisted.
-- More furniture: 12 total items (added Bed, Rug, Bookshelf, Potted Plant); toolbar scrolls.
-- Door walk-through: walk into a house door to enter; walk onto the interior EXIT mat to leave; exiting spawns you just in front of your house. Enter/Exit buttons also remain.
-- All verified by testing agent iterations 2 & 3 (100%; 18 backend tests green).
+- Lobby, real-time shared world, chat, emotes, houses & interiors, decor, rotation, more furniture, door walk-through (iterations 1-3).
+- Bells economy: each player starts with 120 bells, persisted per (room, player) in player_state; wallet synced privately.
+- Farming: buy seeds (carrot/tomato/strawberry/pumpkin) at Shop, Plant in front of you, crops grow over real time (40-90s), Harvest (H) when ripe (✨), held crops sold for bells. Server validates ripeness & rejects overspend/invalid actions.
+- Shop: Buy tab (seeds + 4 special unlockable furniture: fountain/lamppost/arch/piano that add to your toolbar) and Sell Harvest tab.
+- Day/Night cycle: shared 8-min sky cycle on the island (morning→midday→sunset→dusk→night) with stars + moon; HUD clock badge.
+- Startup Mongo indexes (unique player_state & houses, room code) to prevent duplicate wallets/houses.
+- All verified by testing agent iteration_4 (100%; 25/25 backend tests green).
 
 ## Backlog (P1/P2)
 - P1: Furniture rotation (R key), collision, item ownership/lock rules.

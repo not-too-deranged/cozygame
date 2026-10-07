@@ -466,6 +466,18 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 
+@app.on_event("startup")
+async def ensure_indexes():
+    try:
+        await db.player_state.create_index([("code", 1), ("player_id", 1)], unique=True)
+        await db.rooms.create_index([("code", 1)], unique=True)
+        await db.items.create_index([("code", 1), ("zone", 1)])
+        await db.crops.create_index([("code", 1)])
+        await db.houses.create_index([("code", 1), ("owner_id", 1)], unique=True)
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"index setup: {e}")
+
+
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()

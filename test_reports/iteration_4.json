@@ -1,0 +1,26 @@
+{
+  "summary": "Iteration 4 — Bells/wallet, shop, farming economy. 25/25 backend pytest pass (7 new economy tests in test_economy_farming.py + 13 decor/rotation + 5 houses/zones regression). Frontend E2E verified via Playwright: create room, bells-badge=120, clock-badge visible ('Morning'), open shop, buy 2 tomato seeds -> 100 bells, buy lamppost -> 30 bells, close shop, inventory-slot-13 appears and selectable, place-button visible, plant-button opens seed-picker, plant-seed-tomato plants a crop in front of player, harvest-button + H key visible. Server-side rejections confirmed for overspend, double-buy-furniture, planting without seeds, harvesting unripe crops, and selling without held crops. Crop zone isolation confirmed (zone_state for house:<pid> has crops==[]). Planted crops persist across fresh WS reconnect (init.crops). Wallet messages are scoped only to the acting player.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_economy_farming.py",
+    "/app/backend/tests/test_decor_rotation.py",
+    "/app/backend/tests/test_houses_zones.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "IslandGame.jsx is ~1291 lines — now well past the 700-line threshold. Strongly recommend splitting into modules: rendering (drawCrop/drawInterior/drawSky), WS message handlers, keyboard/game-loop hook, and UI panels (Shop, Decor, Chat).",
+    "Server WS economy handlers silently drop invalid actions (overspend, missing seed, unripe harvest, not-owned sell, double-buy) with no feedback to the client. Consider sending a {type:'wallet_reject', reason:'...'} so the UI could show a toast; currently clients rely on absence of a wallet message, which is a brittle contract.",
+    "db.player_state has no unique index on (code, player_id). get_state uses find_one then insert — in a tight race (two sockets of same pid joining simultaneously) duplicate player_state docs could be created. Add a unique compound index at startup.",
+    "harvest/plant handlers do NOT validate x/y bounds or sanitize numeric input (same as place). A malicious client could plant at (1e9, 1e9). Mild; low priority.",
+    "No cleanup of db.crops / db.player_state when rooms become empty — unbounded growth over time. Not blocking for MVP but worth noting."
+  ],
+  "updated_files": ["/app/backend/tests/test_economy_farming.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "N/A (no auth; name + room code join)",
+  "seed_data_creation": "Each pytest test creates a fresh room via POST /api/rooms/create. test_harvest_ripeness_gate_and_credit uses direct Mongo update to backdate planted_at (per spec hint). test_sell_crop uses direct Mongo write to seed crops[] held.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All economy/farming WS flows (buy_seed, plant, harvest, sell_crop, buy_furniture) and wallet persistence/scoping covered in /app/backend/tests/test_economy_farming.py. Prior regression suites remain green. For harvest ripeness tests, backdate planted_at directly in db.crops via MONGO_URL/DB_NAME. Day/night sky is pure client-side (Date.now() 8-min cycle) and only needs visual sanity — the clock-badge label (Morning/Noon/Dusk/Night) is a good quick check. New inventory items (fountain/lamppost/arch/piano) show up as inventory-slot-13+ in order of unlock."
+}
